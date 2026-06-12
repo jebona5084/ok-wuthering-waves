@@ -5,9 +5,8 @@ class Yinlin(BaseChar):
     def do_perform(self):
         if self.has_intro:
             self.sleep(0.4)
-        liberation = self.click_liberation()
         if self.is_mouse_forte_full():
-            if not self.has_intro and not liberation:
+            if not self.has_intro:
                 self.normal_attack()
             self.heavy_attack()
             self.sleep(0.4)
@@ -17,4 +16,8 @@ class Yinlin(BaseChar):
             self.click_echo()
         else:
             self.heavy_attack()
+        self.top_off_con()
+        # liberation last: the switch right after swap-cancels its tail, and
+        # her outro deepen lands the moment the buffed window begins
+        self.click_liberation()
         self.switch_next_char()
