@@ -21,10 +21,12 @@ class Rebecca(BaseChar):
         self.perform_enhanced_heavy()
 
         if not self.need_fast_perform() and self.click_liberation(wait_if_cd_ready=0):
-            self.perform_hmg_mode()
+            if self.perform_hmg_mode():
+                self.cast_fireworks_finisher()
             return self.switch_next_char()
 
         self.continues_normal_attack(0.7)
+        self.top_off_con()
         self.switch_next_char()
 
     def perform_enhanced_heavy(self):
@@ -38,7 +40,7 @@ class Rebecca(BaseChar):
         last_liberation = start
         while self.time_elapsed_accounting_for_freeze(start) < self.HMG_TIME:
             if self.need_fast_perform():
-                return
+                return False
             self.click(interval=0.08)
             now = time.time()
             if now - last_liberation > 0.9:
@@ -46,3 +48,13 @@ class Rebecca(BaseChar):
                 last_liberation = now
             self.check_combat()
             self.task.next_frame()
+        return True
+
+    def cast_fireworks_finisher(self):
+        """Hold liberation at the end of the HMG window to cast BOOM!
+        Fireworks!, then give the damage frames a short commit window; the
+        switch that follows swap-cancels the rest of the finisher and
+        carries ~10 concerto into her next rotation."""
+        self.logger.debug('fireworks finisher')
+        self.send_liberation_key(down_time=0.55)
+        self.sleep(0.25)
