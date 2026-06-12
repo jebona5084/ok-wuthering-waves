@@ -14,6 +14,9 @@ logger = Logger.get_logger(__name__)
 
 
 class CombatCheck(BaseWWTask):
+    # AutoCombatTask sets this True so the 'Auto Target' config can gate
+    # whether a bare health bar (no target lock) counts as combat
+    auto_target_configurable = False
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -40,6 +43,9 @@ class CombatCheck(BaseWWTask):
         self.cds = {}
         self.esc_count = 0
         self.can_break = False
+        self._target_names = None
+        self._target_boxes = None
+        self._target_boxes_size = None
 
     @property
     def in_liberation(self):
@@ -151,13 +157,13 @@ class CombatCheck(BaseWWTask):
             logger.error('target_enemy failed, try recheck break out of combat')
             return self.reset_to_false(reason='target enemy failed')
         else:
-            from src.task.AutoCombatTask import AutoCombatTask
             has_target = self.has_target()
             if not has_target and target:
                 self.log_debug('try target')
                 self.middle_click(after_sleep=0.1)
-            in_combat = has_target or ((self.config.get('Auto Target') or not isinstance(self,
-                                                                                         AutoCombatTask)) and self.check_health_bar())
+            in_combat = has_target or (
+                    (not self.auto_target_configurable or self.config.get('Auto Target'))
+                    and self.check_health_bar())
             if in_combat:
                 if not has_target and not self.target_enemy(wait=True):
                     if not self.target_enemy_error_notified:
@@ -244,21 +250,34 @@ class CombatCheck(BaseWWTask):
             no_name += '_169'
         return has_name, no_name
 
+    def target_search_boxes(self):
+        """Target-lock template names and the four search regions, cached
+        per resolution: has_target runs every combat frame, and the names
+        and scaled box copies were previously recomputed on each call."""
+        size = (self.width, self.height)
+        if self._target_boxes_size != size:
+            has_name, no_name = self.get_target_names()
+            base = self.get_box_by_name(has_name)
+            self._target_names = [has_name, no_name]
+            self._target_boxes = (
+                base.scale(1.2 if self.is_browser() else 1.1),
+                self.get_box_by_name('box_target_enemy_long'),
+                self.get_box_by_name('target_box_long2'),
+                base.scale(1.1, 2.0),
+            )
+            self._target_boxes_size = size
+        return self._target_names, self._target_boxes
+
     def has_target(self, double_check=False):
         threshold = 0.6
-        has_name, no_name = self.get_target_names()
-        scale = 1.2 if self.is_browser() else 1.1
-        best = self.find_best_match_in_box(self.get_box_by_name(has_name).scale(scale), [has_name, no_name],
-                                           threshold=threshold)
+        names, boxes = self.target_search_boxes()
+        best = self.find_best_match_in_box(boxes[0], names, threshold=threshold)
         if not best:
-            best = self.find_best_match_in_box(self.get_box_by_name('box_target_enemy_long'),
-                                               [has_name, no_name], threshold=threshold)
+            best = self.find_best_match_in_box(boxes[1], names, threshold=threshold)
         if not best:
-            best = self.find_best_match_in_box(self.get_box_by_name('target_box_long2'),
-                                               [has_name, no_name], threshold=threshold)
+            best = self.find_best_match_in_box(boxes[2], names, threshold=threshold)
         if not best:
-            best = self.find_best_match_in_box(self.get_box_by_name(has_name).scale(1.1, 2.0),
-                                               [has_name, no_name], threshold=threshold)
+            best = self.find_best_match_in_box(boxes[3], names, threshold=threshold)
             if best and self.esc_count == 0:
                 if double_check:
                     logger.error('try fix bear echo')
@@ -269,7 +288,7 @@ class CombatCheck(BaseWWTask):
                 else:
                     self.sleep(1)
                     return self.has_target(double_check=True)
-        return best and best.name == has_name
+        return best and best.name == names[0]
 
     def target_enemy(self, wait=True):
         """Attempt to acquire a combat target.

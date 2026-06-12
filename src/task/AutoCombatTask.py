@@ -18,6 +18,8 @@ class AutoCombatTask(BaseCombatTask, TriggerTask):
     panel.
     """
 
+    auto_target_configurable = True
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.default_config = {
