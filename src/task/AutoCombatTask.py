@@ -2,7 +2,7 @@ import time
 
 from qfluentwidgets import FluentIcon
 
-from ok import TriggerTask, Logger
+from ok import TriggerTask, Logger, TaskDisabledException
 from src.char.CharFactory import char_names
 from src.scene.WWScene import WWScene
 from src.task.BaseCombatTask import BaseCombatTask, NotInCombatException, CharDeadException
@@ -11,6 +11,41 @@ logger = Logger.get_logger(__name__)
 
 
 class AutoCombatTask(BaseCombatTask, TriggerTask):
+    """Optimized AutoCombatTask. Drop-in replacement for
+    src/task/AutoCombatTask.py (NOT a Character Code tab paste; an okww
+    auto-update may overwrite this file).
+
+    Changes vs built-in, in order of importance:
+
+    1. None-crash guard: the built-in called
+       self.get_current_char().perform() unguarded. During switch
+       frames / revive flicker get_current_char() returns None, which
+       raised AttributeError out of run(), skipped combat_end(), and
+       dropped the whole combat iteration. Now: bounded re-acquire
+       (load_chars + next_frame for up to 2s) before giving the loop
+       back to in_combat().
+
+    2. Fault isolation for character code: an unexpected exception
+       from a char file (relevant when running custom chars) now logs
+       WHICH character threw and at what slot time, re-syncs chars,
+       and retries once; only a repeat from the same character
+       propagates. CharDead / NotInCombat / TaskDisabled semantics are
+       unchanged and TaskDisabledException always propagates.
+
+    3. Rotation instrumentation (info panel, throttled to 1/s):
+       per-character average slot time and count, switches/min, and
+       combat duration. This is how you verify top-offs and
+       animation cancels are actually paying: slot averages should
+       match the design (e.g. a healer slot ~1.5s, a buffed main-DPS
+       window ~14s) and switches/min should rise when cancels land.
+       Stats reset at each combat start. Overhead is two time.time()
+       calls per slot and one info update per second.
+
+    The hot path is otherwise untouched: trigger cadence, in_combat
+    gating, use_liberation logic, warm-up, and realm_perform are
+    byte-identical in behavior. Real switching latency lives in
+    BaseCombatTask/char engines, not here.
+    """
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -32,6 +67,10 @@ class AutoCombatTask(BaseCombatTask, TriggerTask):
         }
         self.op_index = 0
         self.char_features_warmed_up = False
+        self._slot_stats = {}
+        self._slot_total = 0
+        self._stats_start = 0.0
+        self._last_info_update = 0.0
 
     def warm_up_char_features(self):
         if self.char_features_warmed_up:
@@ -45,25 +84,87 @@ class AutoCombatTask(BaseCombatTask, TriggerTask):
         self.char_features_warmed_up = True
         logger.info(f'warm_up_char_features loaded {len(char_names)} character templates')
 
+    # ----- instrumentation -----
+
+    def _reset_slot_stats(self):
+        self._slot_stats = {}
+        self._slot_total = 0
+        self._stats_start = time.time()
+        self._last_info_update = 0.0
+
+    def _record_slot(self, char_name, duration):
+        count, total = self._slot_stats.get(char_name, (0, 0.0))
+        self._slot_stats[char_name] = (count + 1, total + duration)
+        self._slot_total += 1
+        now = time.time()
+        if now - self._last_info_update < 1:
+            return
+        self._last_info_update = now
+        elapsed = max(now - self._stats_start, 0.001)
+        parts = []
+        for name, (c, t) in self._slot_stats.items():
+            parts.append(f'{name} {t / c:.2f}s x{c}')
+        self.info_set('Slot Avg', ' | '.join(parts))
+        self.info_set('Switches/min', round(self._slot_total / elapsed * 60))
+        self.info_set('Combat Time', int(elapsed))
+
+    # ----- robustness -----
+
+    def _reacquire_current_char(self, time_out=2):
+        """Current char unidentifiable (switch frame, revive flicker):
+        re-sync instead of crashing. Returns the char or None."""
+        start = time.time()
+        while time.time() - start < time_out:
+            self.next_frame()
+            if not self.in_team()[0]:
+                return None
+            self.load_chars()
+            char = self.get_current_char(raise_exception=False)
+            if char is not None:
+                return char
+            self.sleep(0.05)
+        logger.warning('could not re-acquire current char')
+        return None
+
     def run(self):
         self.warm_up_char_features()
         ret = False
         if not self.scene.in_team(self.in_team_and_world):
             return ret
         self.use_liberation = self.config.get('Use Liberation')
-        if not self.use_liberation and not self.in_world():  # 仅大世界生效
+        if not self.use_liberation and not self.in_world():  # open world only
             self.use_liberation = True
         combat_start = time.time()
+        last_error_char = None
         while self.in_combat():
-            ret = True
+            if not ret:
+                ret = True
+                self._reset_slot_stats()
+            char = self.get_current_char(raise_exception=False)
+            if char is None:
+                char = self._reacquire_current_char()
+                if char is None:
+                    continue  # let in_combat() decide if combat ended
+            slot_start = time.time()
             try:
-                self.get_current_char().perform()
+                char.perform()
+                self._record_slot(char.name, time.time() - slot_start)
+                last_error_char = None
             except CharDeadException:
                 self.log_error(f'Characters dead', notify=True)
                 break
             except NotInCombatException as e:
                 logger.info(f'auto_combat_task_out_of_combat {int(time.time() - combat_start)} {e}')
                 break
+            except TaskDisabledException:
+                raise
+            except Exception as e:
+                slot_time = time.time() - slot_start
+                logger.error(f'char code error in {char.name} after {slot_time:.2f}s in slot', e)
+                if last_error_char == char.name:
+                    raise  # same char failing twice in a row: real bug, surface it
+                last_error_char = char.name
+                self.load_chars()  # re-sync and give the rotation one retry
         if ret:
             self.combat_end()
         return ret
