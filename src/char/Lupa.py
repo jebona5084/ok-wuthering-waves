@@ -70,6 +70,7 @@ class Lupa(ForteMixin, BaseChar):
                 self.res_wolf()
             return self.switch_next_char()
         self.continues_normal_attack(0.1)
+        self.top_off_con()
         self.switch_next_char()
 
     def still_in_liberation(self):

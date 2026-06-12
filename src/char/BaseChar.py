@@ -563,6 +563,15 @@ class BaseChar:
                 return True
         return False
 
+    def top_off_con(self, threshold=0.7, time_out=0.8):
+        """Close a nearly-full concerto ring with basics before switching out,
+        so the outro/intro buff handoff isn't wasted. Exits the moment the
+        ring fills; skipped when a teammate genuinely needs the field."""
+        con = self.get_current_con()
+        if threshold <= con < 1 and not self.need_fast_perform():
+            self.logger.debug(f'topping off concerto from {con:.2f}')
+            self.continues_normal_attack(time_out, until_con_full=True)
+
     def wait_switch_cd(self):
         since_last_switch = self.time_elapsed_accounting_for_freeze(self.last_perform)
         if since_last_switch <= 1:

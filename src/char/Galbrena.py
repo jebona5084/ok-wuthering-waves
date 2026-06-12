@@ -30,6 +30,7 @@ class Galbrena(BaseChar):
             if self.is_forte_full():
                 self.logger.debug('prefunnel: hold full Sinflame for next buffed intro')
                 self.continues_normal_attack(0.3)
+                self.top_off_con()
                 return self.switch_next_char()
             return self.prefunnel_basics()
         self.click_echo(time_out=0)
@@ -45,6 +46,7 @@ class Galbrena(BaseChar):
                     self.shorekeeper_auto_dodge()
                 self.click(after_sleep=0.1)
                 self.check_combat()
+            self.top_off_con()
             return self.switch_next_char()
         self.continues_normal_attack(1)
         self.click_resonance()
