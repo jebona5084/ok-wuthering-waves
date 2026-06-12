@@ -4,62 +4,33 @@ from qfluentwidgets import FluentIcon
 
 from ok import TriggerTask, Logger, TaskDisabledException
 from src.char.CharFactory import char_names
-from src.scene.WWScene import WWScene
 from src.task.BaseCombatTask import BaseCombatTask, NotInCombatException, CharDeadException
 
 logger = Logger.get_logger(__name__)
 
 
 class AutoCombatTask(BaseCombatTask, TriggerTask):
-    """Optimized AutoCombatTask. Drop-in replacement for
-    src/task/AutoCombatTask.py (NOT a Character Code tab paste; an okww
-    auto-update may overwrite this file).
+    """Trigger task that runs each character's combat script while in combat.
 
-    Changes vs built-in, in order of importance:
-
-    1. None-crash guard: the built-in called
-       self.get_current_char().perform() unguarded. During switch
-       frames / revive flicker get_current_char() returns None, which
-       raised AttributeError out of run(), skipped combat_end(), and
-       dropped the whole combat iteration. Now: bounded re-acquire
-       (load_chars + next_frame for up to 2s) before giving the loop
-       back to in_combat().
-
-    2. Fault isolation for character code: an unexpected exception
-       from a char file (relevant when running custom chars) now logs
-       WHICH character threw and at what slot time, re-syncs chars,
-       and retries once; only a repeat from the same character
-       propagates. CharDead / NotInCombat / TaskDisabled semantics are
-       unchanged and TaskDisabledException always propagates.
-
-    3. Rotation instrumentation (info panel, throttled to 1/s):
-       per-character average slot time and count, switches/min, and
-       combat duration. This is how you verify top-offs and
-       animation cancels are actually paying: slot averages should
-       match the design (e.g. a healer slot ~1.5s, a buffed main-DPS
-       window ~14s) and switches/min should rise when cancels land.
-       Stats reset at each combat start. Overhead is two time.time()
-       calls per slot and one info update per second.
-
-    The hot path is otherwise untouched: trigger cadence, in_combat
-    gating, use_liberation logic, warm-up, and realm_perform are
-    byte-identical in behavior. Real switching latency lives in
-    BaseCombatTask/char engines, not here.
+    Tolerates frames where the current character can't be identified
+    (switch/revive flicker), retries once when a character script raises
+    unexpectedly, and publishes per-character rotation stats to the info
+    panel.
     """
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.default_config = {'_enabled': True}
+        self.default_config = {
+            '_enabled': True,
+            'Auto Target': True,
+            'Use Liberation': True,
+            'Check Levitator': True,
+        }
         self.trigger_interval = 0.1
         self.name = "Auto Combat"
         self.description = "Enable auto combat in Abyss, Game World etc"
         self.icon = FluentIcon.CALORIES
         self.last_is_click = False
-        self.default_config.update({
-            'Auto Target': True,
-            'Use Liberation': True,
-            'Check Levitator': True,
-        })
         self.config_description = {
             'Auto Target': 'Turn off to enable auto combat only when manually target enemy using middle click',
             'Use Liberation': 'Do not use Liberation in Open World to Save Time',
@@ -101,9 +72,7 @@ class AutoCombatTask(BaseCombatTask, TriggerTask):
             return
         self._last_info_update = now
         elapsed = max(now - self._stats_start, 0.001)
-        parts = []
-        for name, (c, t) in self._slot_stats.items():
-            parts.append(f'{name} {t / c:.2f}s x{c}')
+        parts = [f'{name} {t / c:.2f}s x{c}' for name, (c, t) in self._slot_stats.items()]
         self.info_set('Slot Avg', ' | '.join(parts))
         self.info_set('Switches/min', round(self._slot_total / elapsed * 60))
         self.info_set('Combat Time', int(elapsed))
@@ -151,7 +120,7 @@ class AutoCombatTask(BaseCombatTask, TriggerTask):
                 self._record_slot(char.name, time.time() - slot_start)
                 last_error_char = None
             except CharDeadException:
-                self.log_error(f'Characters dead', notify=True)
+                self.log_error('Characters dead', notify=True)
                 break
             except NotInCombatException as e:
                 logger.info(f'auto_combat_task_out_of_combat {int(time.time() - combat_start)} {e}')

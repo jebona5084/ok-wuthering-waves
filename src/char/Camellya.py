@@ -71,7 +71,7 @@ class Camellya(BaseChar):
                         elif loop_time < 3.1:
                             loop_time += 1
                 if budding:
-                    self.logger.info(f'start budding')
+                    self.logger.info('start budding')
                     self.check_target()
                     budding_start_time = time.time()
                     loop_time = 5.1
@@ -81,7 +81,7 @@ class Camellya(BaseChar):
                     self.task.mouse_down()
                 if time.time() - budding_start_time < 1.5 and self.liberation_available():
                     if self.click_liberation() and heavy_att:
-                        self.logger.info(f'liberation retry heavy att')
+                        self.logger.info('liberation retry heavy att')
                         self.task.mouse_up()
                         self.sleep(0.2, False)
                         self.task.mouse_down()
@@ -267,7 +267,7 @@ class Camellya(BaseChar):
         gray = cv2.inRange(cropped, lower_bound, upper_bound)
         start_x, end_x = self.detect_stripe_region(gray)
         if start_x == -2:
-            self.logger.debug(f'calculate_forte_percent failed due to interference')
+            self.logger.debug('calculate_forte_percent failed due to interference')
             return -1
         if start_x != -1:
             stripe_area = gray[:, start_x:end_x]
@@ -275,13 +275,13 @@ class Camellya(BaseChar):
             total_pixels = gray.size
             ratio = white_pixels / total_pixels if total_pixels > 0 else 0
         else:
-            self.logger.debug(f'using calculate_color_percentage')
+            self.logger.debug('using calculate_color_percentage')
             ratio = self.task.calculate_color_percentage(forte_color, box) * 2
             ratio = ratio if ratio <= 1 else 1
         return ratio
 
     def heavy_attack(self, duration, check_combat=True, until_con_full=False):
-        self.logger.info(f'start heavy_attack')
+        self.logger.info('start heavy_attack')
         self.last_forte = 0
         freeze_forte_check = False
         freeze_forte_time = 0
@@ -320,7 +320,7 @@ class Camellya(BaseChar):
                 self.logger.debug(f'diff {diff}')
         if self.waiting_for_forte_drop and self.time_elapsed_accounting_for_freeze(self.forte_drop_timestamp) > 0.6:
             self.waiting_for_forte_drop = False
-            self.logger.info(f'retry heavy attack')
+            self.logger.info('retry heavy attack')
             self.task.mouse_up()
             self.sleep(0.1, False)
             self.task.mouse_down()
@@ -331,13 +331,13 @@ class Camellya(BaseChar):
     def check_target(self, is_heavy_att=False):
         if not self.task.has_target():
             if is_heavy_att:
-                self.logger.info(f'check_target Release')
+                self.logger.info('check_target Release')
                 self.task.mouse_up()
-            self.logger.info(f'check_combat')
+            self.logger.info('check_combat')
             self.check_combat()
             self.task.next_frame()
             if is_heavy_att:
-                self.logger.info(f'check_target Retry')
+                self.logger.info('check_target Retry')
                 self.task.mouse_down()
 
 

@@ -3,9 +3,7 @@ import re
 from qfluentwidgets import FluentIcon
 
 from ok import Logger, TaskDisabledException
-from src.Labels import Labels
-from src.task.BaseWWTask import number_re, stamina_re
-from src.task.FarmEchoTask import FarmEchoTask
+from src.task.BaseWWTask import number_re
 from src.task.ForgeryTask import ForgeryTask
 from src.task.NightmareNestTask import NightmareNestTask
 from src.task.TacetTask import TacetTask
@@ -169,7 +167,7 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             self.log_info('no_boss_proceed, click claim')
             # Click [Guidebook] in [Terminal] interface
             self.click(0.885, 0.250, after_sleep=2)
-        self.log_info(f'claim daily reward via  coordinate')
+        self.log_info('claim daily reward via  coordinate')
         self.click(0.930, 0.882, after_sleep=1)
         self.ensure_main(time_out=10)
 

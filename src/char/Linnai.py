@@ -1,4 +1,3 @@
-import time
 
 from src.char.BaseChar import BaseChar, SwitchPriority, forte_white_color
 
@@ -40,7 +39,7 @@ class Linnai(BaseChar):
             
     def perform_under_intro(self):
         if not self.check_res():
-            self.logger.debug(f'Linnai fails entering accelerate mode!')
+            self.logger.debug('Linnai fails entering accelerate mode!')
             return False
         self.task.wait_until(lambda: self.is_color_full() or self.is_con_full(), post_action=self.click,
                                      time_out=1)

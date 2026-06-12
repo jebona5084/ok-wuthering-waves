@@ -1,7 +1,5 @@
-import time
 import unittest
 
-import cv2
 
 from config import config
 from ok.test.TaskTestCase import TaskTestCase

@@ -104,7 +104,7 @@ class FarmEchoTask(WWOneTimeTask, BaseCombatTask):
         self.use_liberation = self.config.get('Use Liberation')
         try:
             return self.do_run()
-        except TaskDisabledException as e:
+        except TaskDisabledException:
             pass
         except Exception as e:
             logger.error('farm 4c error, try handle monthly card', e)
@@ -171,7 +171,7 @@ class FarmEchoTask(WWOneTimeTask, BaseCombatTask):
                     continue
 
                 if self.pick_echo():
-                    logger.info(f'farm echo on the face')
+                    logger.info('farm echo on the face')
                     dropped = True
                 elif self.config.get('Echo Pickup Method', "Yolo") == "Yolo":
                     dropped = \
@@ -336,36 +336,35 @@ class FarmEchoTask(WWOneTimeTask, BaseCombatTask):
         boss = self.config.get('Boss')
         if boss in ('Sentry Construct', 'Lioness of Glory', 'Fallacy of No Return'):
             self.combat_wait_time = self.config.get("Combat Wait Time", 0) or 5
-        elif boss in ('Hyvatia'):
+        elif boss == 'Hyvatia':
             self.combat_wait_time = self.config.get("Combat Wait Time", 0) or 7
         else:
             self.combat_wait_time = self.config.get("Combat Wait Time", 0)
-        if boss in ('Lady of the Sea'):
+        if boss == 'Lady of the Sea':
             self.log_debug('manage_boss_parameters Lady of the Sea')
             self._in_realm = True
         self.bypass_end_wait = boss in ('Fenrico', 'Fallacy of No Return', 'Lady of the Sea',
                                         'Nameless Explorer')
-        self.treat_as_not_in_realm = boss in ('Nightmare: Hecate')
-        self.log_info(
-            f"profile: {boss} { {
-                'combat_wait_time': self.combat_wait_time,
-                'bypass_end_wait': self.bypass_end_wait,
-                'treat_as_not_in_realm': self.treat_as_not_in_realm
-            } }"
-        )
+        self.treat_as_not_in_realm = boss == 'Nightmare: Hecate'
+        profile = {
+            'combat_wait_time': self.combat_wait_time,
+            'bypass_end_wait': self.bypass_end_wait,
+            'treat_as_not_in_realm': self.treat_as_not_in_realm
+        }
+        self.log_info(f'profile: {boss} {profile}')
 
     def manage_boss_interactions(self):
         if self.in_combat():
             return
         boss = self.config.get('Boss')
         if boss != 'Other':
-            if boss in ('Lorelei'):
+            if boss == 'Lorelei':
                 night_elapsed = time.time() - self.last_night_change
                 self.log_info(f"Night elapsed: {night_elapsed:.1f}s")
                 if night_elapsed > 660:
                     self.change_time_to_night()
                     self.last_night_change = time.time()
-            if boss in ('Fallacy of No Return'):
+            if boss == 'Fallacy of No Return':
                 if not self.find_f_with_text():
                     self.teleport_to_nearest_boss()
                     self.send_key('d', down_time=0.25, after_sleep=0.5)
@@ -373,7 +372,7 @@ class FarmEchoTask(WWOneTimeTask, BaseCombatTask):
                 if self.walk_until_f(time_out=20, check_combat=True, running=True):
                     self.scroll_and_click_buttons()
                 self.wait_until(self.in_combat, raise_if_not_found=False, time_out=300)
-            if boss in ('Fenrico'):
+            if boss == 'Fenrico':
                 while self.find_f_with_text():
                     self.sleep(1)
                     self.incr_drop(self.pick_echo())
@@ -387,7 +386,7 @@ class FarmEchoTask(WWOneTimeTask, BaseCombatTask):
                                time_out=5, target=True)
                 self.execute_treasure_hunt()
                 self.wait_until(self.in_combat, raise_if_not_found=False, time_out=300)
-            if boss in ('Lady of the Sea'):
+            if boss == 'Lady of the Sea':
                 self.log_debug('manage_boss_interactions Lady of the Sea')
                 self._in_realm = True
                 if not self.in_world():
@@ -406,7 +405,7 @@ class FarmEchoTask(WWOneTimeTask, BaseCombatTask):
                     self.wait_in_team_and_world(time_out=120)
                     self.sleep(2)
                     self.wait_until(self.in_combat, raise_if_not_found=False, time_out=10)
-            if boss in ('Nameless Explorer'):
+            if boss == 'Nameless Explorer':
                 # 无铭探索者无主动攻击欲望，重新挑战后需主动靠近触发战斗
                 self._handle_unnamed_explorer()
             if boss not in self.boss_list:
@@ -489,7 +488,7 @@ class FarmEchoTask(WWOneTimeTask, BaseCombatTask):
                 targets.extend(boxes)
                 box = max(targets, key=lambda box: box.confidence, default=None)
             if box is None:
-                raise Exception(f"boss not found")
+                raise Exception("boss not found")
         return box
 
     def teleport_to_nearest_boss(self):
@@ -550,7 +549,6 @@ class FarmEchoTask(WWOneTimeTask, BaseCombatTask):
         trapezoid_scaled[:, 0, 1] = (trapezoid[:, 0, 1] * scale_y).astype(np.int32)
 
         # 定义匹配阈值
-        best_mat = None
         best_match = None
         best_ratio = 0
 
@@ -565,21 +563,6 @@ class FarmEchoTask(WWOneTimeTask, BaseCombatTask):
                     if ratio > best_ratio:
                         best_ratio = ratio
                         best_match = cnt
-                        best_mat = mat_i
-
-        # # 画出匹配到的轮廓
-        # if best_match is not None:
-        #     cv2.polylines(img, [best_match], isClosed=False, color=(0,255,0), thickness=2)
-
-        # if best_mat is not None and len(best_mat) > 0:
-        #     best_mat = best_mat.astype(np.int32)
-        #     cv2.polylines(img, [best_mat], isClosed=False, color=(255,0,0), thickness=2)
-
-        # # 显示结果
-        # print(f'Best match ratio: {best_ratio:.2f}')
-        # cv2.imshow("mask", mask)
-        # cv2.imshow("Matched", img)
-        # cv2.waitKey(1)
 
         # 点击轮廓中心
         if best_match is None:
@@ -604,7 +587,7 @@ class FarmEchoTask(WWOneTimeTask, BaseCombatTask):
                 self.click(pop_up, after_sleep=1)
                 travel = self.wait_feature('gray_teleport', raise_if_not_found=True, time_out=3)
         if not travel:
-            raise RuntimeError(f'Can not find the travel button')
+            raise RuntimeError('Can not find the travel button')
         self.click_box(travel, relative_x=1.5)
         self.wait_in_team_and_world(time_out=20)
         self.sleep(2)

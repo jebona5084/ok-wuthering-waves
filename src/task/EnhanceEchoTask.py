@@ -8,7 +8,6 @@ from qfluentwidgets import FluentIcon
 from ok import FindFeature, Logger
 from ok.feature.Box import get_bounding_box
 from ok.util.file import clear_folder
-from src.scene.WWScene import WWScene
 from src.task.BaseWWTask import BaseWWTask
 
 logger = Logger.get_logger(__name__)
@@ -268,7 +267,7 @@ class EnhanceEchoTask(BaseWWTask, FindFeature):
         remaining_slots = 5 - total_count
         if (valid_count + remaining_slots) < self.config.get('有效词条>='):
             self.fail_reason = f'有效词条不足_上限{valid_count + remaining_slots}'
-            self.log_info(f'剩余孔位不足以达到设定的有效词条数量, 丢弃')
+            self.log_info('剩余孔位不足以达到设定的有效词条数量, 丢弃')
             return False
 
         return True

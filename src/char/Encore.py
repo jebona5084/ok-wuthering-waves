@@ -24,7 +24,7 @@ class Encore(BaseChar):
         if self.time_elapsed_accounting_for_freeze(self.last_heavy, True) < 4.6:
             return SwitchPriority.NO
         if self.still_in_liberation() or self.can_resonance_step2():
-            self.logger.info(f'switch priority MAX because still in liberation')
+            self.logger.info('switch priority MAX because still in liberation')
             return SwitchPriority.MUST
         return super().get_switch_priority(current_char, has_intro, target_low_con)
 

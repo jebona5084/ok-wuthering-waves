@@ -43,14 +43,14 @@ class Jinhsi(BaseChar):
 
     def handle_incarnation(self):
         self.incarnation = False
-        self.logger.info(f'handle_incarnation click_resonance start')
+        self.logger.info('handle_incarnation click_resonance start')
         start = time.time()
         animation_start = 0
         last_op = 'resonance'
         self.task.in_liberation = True
         while True:
             if time.time() - start > 6:
-                self.logger.info(f'handle incarnation too long')
+                self.logger.info('handle incarnation too long')
                 break
             if self.task.in_team()[0]:
                 if last_op == 'resonance':
@@ -60,11 +60,11 @@ class Jinhsi(BaseChar):
                     self.send_resonance_key()
                     last_op = 'resonance'
                 if animation_start != 0:
-                    self.logger.info(f'Jinhsi handle_incarnation done')
+                    self.logger.info('Jinhsi handle_incarnation done')
                     break
             else:
                 if animation_start == 0:
-                    self.logger.info(f'Jinhsi handle_incarnation start animation')
+                    self.logger.info('Jinhsi handle_incarnation start animation')
                     animation_start = time.time()
                 self.task.in_liberation = True
             self.check_combat()
@@ -80,7 +80,7 @@ class Jinhsi(BaseChar):
         self.logger.info(f'handle_incarnation  click_resonance end {time.time() - start}')
 
     def handle_intro(self):
-        self.logger.info(f'handle_intro start')
+        self.logger.info('handle_intro start')
         start = time.time()
         while True:
             elapsed = time.time() - start

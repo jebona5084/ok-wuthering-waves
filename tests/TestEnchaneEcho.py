@@ -1,8 +1,6 @@
-import time
 import unittest
 from config import config
 from ok.test.TaskTestCase import TaskTestCase
-from src.task.AutoCombatTask import AutoCombatTask
 from src.task.EnhanceEchoTask import EnhanceEchoTask
 
 config['debug'] = True

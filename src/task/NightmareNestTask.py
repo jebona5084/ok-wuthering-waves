@@ -93,7 +93,7 @@ class NightmareNestTask(WWOneTimeTask, BaseCombatTask):
             logger.info(f'farm echo yolo find {dropped}')
         else:
             dropped = True
-            self.log_info(f'farm echo walk find true')
+            self.log_info('farm echo walk find true')
         self._capture_success = dropped
         self.sleep(1)
 
