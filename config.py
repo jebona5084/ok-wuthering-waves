@@ -36,7 +36,10 @@ key_config_option = ConfigOption('Game Hotkey', {
 char_config_option = ConfigOption('Character Config', {
     'Iuno C6': False,
     'Chisa DPS': False,
-}, description='Character Config', show_at_tab=True, icon=FluentIcon.PEOPLE)
+    'Galbrena Pre-Funnel': False,
+}, description='Character Config', config_description={
+    'Galbrena Pre-Funnel': 'Bank Sinflame with swap-cancelled basics while off-buff, then enter Demon Hypostasis right after Intro',
+}, show_at_tab=True, icon=FluentIcon.PEOPLE)
 
 monthly_card_config_option = ConfigOption('Monthly Card Config', {
     'Check Monthly Card': True,

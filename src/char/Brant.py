@@ -41,6 +41,7 @@ class Brant(BaseChar):
             return self.switch_next_char()
         if not self.still_in_liberation() and self.echo_available():
             self.click_echo()
+        self.top_off_con()
         self.switch_next_char()
 
     def still_in_liberation(self):

@@ -5,19 +5,34 @@ from src.char.BaseChar import BaseChar
 
 class Galbrena(BaseChar):
 
+    def prefunnel_enabled(self):
+        return self.task and self.task.char_config.get('Galbrena Pre-Funnel')
+
     def do_perform(self):
+        prefunnel = self.prefunnel_enabled()
         if self.has_intro:
-            self.logger.debug('has_intro wait and heavy attack for 86F and dodge')
-            self.task.mouse_down()
-            self.sleep(1)
-            if self.need_fast_perform():
+            if prefunnel and self.is_forte_full():
+                self.logger.debug('prefunnel intro: Sinflame banked, skip heavy hold')
+                self.continues_normal_attack(0.7)
+            else:
+                self.logger.debug('has_intro wait and heavy attack for 86F and dodge')
+                self.task.mouse_down()
+                self.sleep(1)
+                if self.need_fast_perform():
+                    self.task.mouse_up()
+                    return self.switch_next_char()
+                self.sleep(0.44)
                 self.task.mouse_up()
-                return self.switch_next_char()
-            self.sleep(0.44)
-            self.task.mouse_up()
-            self.continues_right_click(0.6)
+                self.continues_right_click(0.6)
         elif self.flying():
             self.wait_down()
+        if prefunnel and not self.has_intro and not self.need_fast_perform():
+            if self.is_forte_full():
+                self.logger.debug('prefunnel: hold full Sinflame for next buffed intro')
+                self.continues_normal_attack(0.3)
+                self.top_off_con()
+                return self.switch_next_char()
+            return self.prefunnel_basics()
         self.click_echo(time_out=0)
         if self.is_forte_full() and not self.need_fast_perform():
             self.click_resonance()
@@ -31,9 +46,21 @@ class Galbrena(BaseChar):
                     self.shorekeeper_auto_dodge()
                 self.click(after_sleep=0.1)
                 self.check_combat()
+            self.top_off_con()
             return self.switch_next_char()
         self.continues_normal_attack(1)
         self.click_resonance()
+        return self.switch_next_char()
+
+    def prefunnel_basics(self):
+        """Build Sinflame off-buff with the Basic 1-4 string, swap-cancelling
+        the 4th swing (its damage lands early; the swap eats the recovery).
+        Segments can't be counted visually, so timing approximates the string;
+        Echo, Resonance and Liberation stay banked for the buffed window."""
+        self.logger.debug('prefunnel basics')
+        self.continues_normal_attack(1.2)
+        self.click()
+        self.sleep(0.2)
         return self.switch_next_char()
 
     def check_res(self):
