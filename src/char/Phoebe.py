@@ -288,9 +288,9 @@ class Phoebe(BaseChar):
                     outer_start = time.time()
                 self.task.next_frame()
             if self.attribute == 2:
-                self.logger.info(f'Enters confession status')
+                self.logger.info('Enters confession status')
             else:
-                self.logger.info(f'Enters absolution status')
+                self.logger.info('Enters absolution status')
             self.continues_right_click(0.05)
             self.star_available = True
             self.reset_action()
@@ -349,19 +349,13 @@ class Phoebe(BaseChar):
         if height == 0 or width < 64 or not np.array_equal(np.unique(gray), [0, 255]):
             return 0
 
-        white_ratio = np.count_nonzero(gray == 255) / gray.size
         profile = np.sum(gray == 255, axis=0).astype(np.float32)
         profile -= np.mean(profile)
-        n = np.abs(np.fft.fft(profile))
-        amplitude = 0
-        frequncy = 0
-        i = 1
-        while i < width:
-            if n[i] > amplitude:
-                amplitude = n[i]
-                frequncy = i
-            i += 1
-        return (min_freq <= i <= max_freq) or amplitude >= min_amp
+        amplitude = np.max(np.abs(np.fft.fft(profile))[1:])
+        # The original loop compared its exhausted counter (== width) against
+        # min_freq/max_freq, which is always False for width >= 64, so only
+        # the amplitude test is effective; behavior preserved as-is.
+        return (min_freq <= width <= max_freq) or amplitude >= min_amp
 
     def calculate_forte_num(self, forte_color, box, num=1, min_freq=39, max_freq=41, min_amp=50):
         cropped = box.crop_frame(self.task.frame)
@@ -408,7 +402,7 @@ class Phoebe(BaseChar):
 
     def reset_action(self):
         if self.attribute == 2:
-            self.logger.info(f'reset action')
+            self.logger.info('reset action')
             self.state = {
                 "enter_status": 0,
                 "starflash_combo": 0,

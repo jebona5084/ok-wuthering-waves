@@ -2,11 +2,10 @@ import math
 import re
 import time
 from datetime import datetime, timedelta
-from typing import List
 
 import numpy as np
 
-from ok import BaseTask, Logger, find_boxes_by_name, og, find_color_rectangles, mask_white
+from ok import BaseTask, Logger, og, find_color_rectangles
 from ok import CannotFindException
 import cv2
 
@@ -166,7 +165,7 @@ class BaseWWTask(BaseTask):
                 if no_echo_start == 0:
                     no_echo_start = time.time()
                 elif time.time() - no_echo_start > 3:
-                    self.log_debug(f'walk front to_echo, no echos found, break')
+                    self.log_debug('walk front to_echo, no echos found, break')
                     break
                 next_direction = 'w'
             else:
@@ -325,13 +324,11 @@ class BaseWWTask(BaseTask):
         delta_x = center_x - location_x
         delta_y = center_y - location_y
         # Determine dominant direction based on vector magnitude
-        direction = None
         if (abs(delta_x) > abs(delta_y) or (not current_direction and abs(delta_x) > 0.05 * screen_height)
                 or abs(delta_x) > 0.15 * screen_height):
             # More horizontal movement needed
             return "a" if delta_x > 0 else "d"
-
-            # More vertical movement needed (or equal)
+        # More vertical movement needed (or equal)
         return "w" if delta_y > 0 else "s"
 
     def find_treasure_icon(self):
@@ -353,12 +350,12 @@ class BaseWWTask(BaseTask):
     def check_for_monthly_card(self):
         if self.should_check_monthly_card():
             start = time.time()
-            logger.info(f'check_for_monthly_card start check')
+            logger.info('check_for_monthly_card start check')
             if self.in_combat():
-                logger.info(f'check_for_monthly_card in combat return')
+                logger.info('check_for_monthly_card in combat return')
                 return time.time() - start
             if self.in_team_and_world():
-                logger.info(f'check_for_monthly_card in team send sleep until monthly card popup')
+                logger.info('check_for_monthly_card in team send sleep until monthly card popup')
                 monthly_card = self.wait_until(self.handle_monthly_card, time_out=120, raise_if_not_found=False)
                 logger.info(f'wait monthly card end {monthly_card}')
                 cost = time.time() - start
@@ -432,7 +429,7 @@ class BaseWWTask(BaseTask):
         else:
             used = once
             x = 0.32
-            logger.info(f"使用单倍体力")
+            logger.info("使用单倍体力")
         self.click(x, y, after_sleep=1)
         if self.wait_feature('gem_add_stamina', horizontal_variance=0.4, vertical_variance=0.05,
                              time_out=2):  # 看是否需要使用备用体力
@@ -474,7 +471,7 @@ class BaseWWTask(BaseTask):
             if raise_if_not_found:
                 raise CannotFindException('cant find the f to enter')
             else:
-                logger.warning(f"can't find the f to enter")
+                logger.warning("can't find the f to enter")
                 return False
         return f_found
 
@@ -514,7 +511,7 @@ class BaseWWTask(BaseTask):
             self.sleep(0.5)
             self.send_key('esc')
             self.sleep(0.5)
-            logger.info(f"handle_claim_button found a claim reward")
+            logger.info("handle_claim_button found a claim reward")
             return True
 
     def handle_claim_button_now(self):
@@ -522,7 +519,7 @@ class BaseWWTask(BaseTask):
             self.sleep(0.5)
             self.send_key('esc')
             self.sleep(0.2)
-            logger.info(f"handle_claim_button_now found a claim reward")
+            logger.info("handle_claim_button_now found a claim reward")
             return True
 
     def has_claim(self):
@@ -603,7 +600,7 @@ class BaseWWTask(BaseTask):
         self.log_info('start walk_to_treasure')
         if not self.walk_to_box(self.find_treasure_icon, end_condition=self.find_f_with_text):
             if not self.walk_to_box(self.find_treasure_icon, end_condition=self.find_f_with_text):
-                raise Exception(f'can not walk to treasure!')
+                raise Exception('can not walk to treasure!')
         if send_f:
             self.walk_until_f(time_out=2, backward_time=0, raise_if_not_found=raise_if_not_found)
         self.sleep(1)
@@ -654,7 +651,7 @@ class BaseWWTask(BaseTask):
     def walk_find_echo(self, backward_time=1, time_out=3):
         if self.walk_until_f(time_out=time_out, backward_time=backward_time, target_text=self.absorb_echo_text(),
                              raise_if_not_found=False, check_combat=True):  # find and pick echo
-            logger.debug(f'farm echo found echo move forward walk_until_f to find echo')
+            logger.debug('farm echo found echo move forward walk_until_f to find echo')
             return self.pick_f()
 
     def incr_drop(self, dropped):
@@ -769,7 +766,6 @@ class BaseWWTask(BaseTask):
         max_conf = 0
         max_angle = 0
         max_target = None
-        max_mat = None
         (h, w) = arrow_template.mat.shape[:2]
         # self.log_debug(f'turn_east h:{h} w:{w}')
         center = (w // 2, h // 2)
@@ -790,12 +786,6 @@ class BaseWWTask(BaseTask):
                 max_conf = target.confidence
                 max_angle = angle
                 max_target = target
-                # max_mat = template
-        # arrow_template.mat = original_mat
-        # arrow_template.mask = None
-        # if self.debug and max_mat is not None:
-        #     self.screenshot('max_mat',frame=max_mat)
-        # self.log_debug(f'turn_east max_conf: {max_conf} {max_angle}')
         return max_angle, max_target
 
     def get_mini_map_turn_angle(self, feature, threshold=0.72, x_offset=0, y_offset=0):

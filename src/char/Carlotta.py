@@ -1,9 +1,6 @@
 import time
 
-import cv2
-import numpy as np
 
-from ok import color_range_to_bound
 from src.char.BaseChar import BaseChar, SwitchPriority
 from src.char.ForteMixin import ForteMixin
 
@@ -111,7 +108,7 @@ class Carlotta(ForteMixin, BaseChar):
     def click_resonance(self, post_sleep=0, has_animation=False, send_click=True, animation_min_duration=0,
                         check_cd=False, time_out=0):
         clicked = False
-        self.logger.debug(f'click_resonance start')
+        self.logger.debug('click_resonance start')
         last_click = 0
         last_op = 'click'
         resonance_click_time = 0

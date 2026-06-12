@@ -1,6 +1,5 @@
 import setuptools
 from Cython.Build import cythonize
-from distutils.extension import Extension
 from setuptools import Extension
 
 import os

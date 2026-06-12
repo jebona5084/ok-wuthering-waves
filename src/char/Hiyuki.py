@@ -49,7 +49,7 @@ class Hiyuki(BaseChar):
         while self.has_long_action2() and self.time_elapsed_accounting_for_freeze(self.last_perform) < timeout:
             self.f_break()
             self.click_echo(time_out=0)
-            self.logger.debug(f'hiyuki find mouse_forte{self.task.find_one('hiyuki_lib_forte', threshold=0.7)}')
+            self.logger.debug(f"hiyuki find mouse_forte{self.task.find_one('hiyuki_lib_forte', threshold=0.7)}")
             if self.lib_permission and self.liberation_available():
                 self.hold_liberation()
                 self.logger.debug('hiyuki perform lib2')

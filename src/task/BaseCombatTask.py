@@ -132,11 +132,11 @@ class BaseCombatTask(CombatCheck):
             if check_function():
                 if animation_start > 0:
                     self._in_liberation = False
-                    logger.debug(f'animation ended')
+                    logger.debug('animation ended')
                     return
                 else:
                     if time.time() - start > enter_animation_wait:
-                        logger.info(f'send_key_and_wait_animation failed to enter animation')
+                        logger.info('send_key_and_wait_animation failed to enter animation')
                         return
                     logger.debug(f'animation not started send key {key}')
                     self.send_key(key, after_sleep=0.1)
@@ -187,10 +187,10 @@ class BaseCombatTask(CombatCheck):
         try:
             self.send_key('esc', after_sleep=2)  # ① 关闭复活弹窗
             self.revive_at_tower_and_heal()
-            logger.info(f'revive_action success')
+            logger.info('revive_action success')
             return True
         except Exception as e:
-            logger.error(f'revive_action failed', e)
+            logger.error('revive_action failed', e)
             return False
 
     def revive_at_tower_and_heal(self):
@@ -208,7 +208,7 @@ class BaseCombatTask(CombatCheck):
         teleport = self.find_best_match_in_box(self.box_of_screen(0.1, 0.1, 0.9, 0.9),
                                                ['map_way_point', 'map_way_point_big'], 0.6)
         if not teleport:
-            raise RuntimeError(f'Can not find a teleport to heal')
+            raise RuntimeError('Can not find a teleport to heal')
         self.click(teleport, after_sleep=1)
         travel = self.wait_feature('gray_teleport', raise_if_not_found=True, time_out=3)
         if not travel:
@@ -217,7 +217,7 @@ class BaseCombatTask(CombatCheck):
                 self.click(pop_up, after_sleep=1)
                 travel = self.wait_feature('gray_teleport', raise_if_not_found=True, time_out=3)
         if not travel:
-            raise RuntimeError(f'Can not find the travel button')
+            raise RuntimeError('Can not find the travel button')
         self.click_box(travel, relative_x=1.5)
         self.wait_in_team_and_world(time_out=20)
         self.sleep(2)
@@ -516,7 +516,7 @@ class BaseCombatTask(CombatCheck):
                 logger.info(f'not in team while switching chars_{current_char}_to_{switch_to} {now - start}')
                 # if self.debug:
                 #     self.screenshot(f'not in team while switching chars_{current_char}_to_{switch_to} {now - start}')
-                self.raise_not_in_combat(f'not in_team while switching')
+                self.raise_not_in_combat('not in_team while switching')
                 if now - start > self.switch_char_time_out:
                     self.raise_not_in_combat(
                         f'switch too long failed chars_{current_char}_to_{switch_to}, {now - start}')
@@ -699,7 +699,7 @@ class BaseCombatTask(CombatCheck):
         else:
             if len(self.chars) == 3:
                 self.chars = self.chars[:2]
-            logger.info(f'team size changed to 2')
+            logger.info('team size changed to 2')
 
         for char in self.chars:
             if char is not None:

@@ -1,4 +1,3 @@
-import time
 import unittest
 from config import config
 from ok.test.TaskTestCase import TaskTestCase

@@ -1,6 +1,6 @@
 import time
 
-from src.char.BaseChar import BaseChar, SwitchPriority, forte_white_color
+from src.char.BaseChar import BaseChar, SwitchPriority
 from src.char.ForteMixin import ForteMixin
 
 
@@ -19,8 +19,6 @@ class Changli(ForteMixin, BaseChar):
         return super().get_switch_priority(current_char, has_intro, target_low_con)
 
     def do_perform(self):
-        outro = False
-        forte = -1
         self.check_f_on_switch = True
         if self.has_intro:
             self.continues_normal_attack(0.3)

@@ -26,12 +26,8 @@ class ForteMixin:
         profile -= np.mean(profile)
         spectrum = np.abs(np.fft.fft(profile))
 
-        best_amp = 0.0
-        best_freq = 0
-        for i in range(1, width):
-            if spectrum[i] > best_amp:
-                best_amp = spectrum[i]
-                best_freq = i
+        best_freq = int(np.argmax(spectrum[1:])) + 1
+        best_amp = float(spectrum[best_freq])
 
         self.logger.debug(f'forte freq={best_freq} amp={best_amp:.1f}')
         return (min_freq <= best_freq <= max_freq) or best_amp >= min_amp
