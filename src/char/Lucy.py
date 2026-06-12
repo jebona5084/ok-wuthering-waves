@@ -1,6 +1,6 @@
 import time
 
-from src.char.BaseChar import BaseChar
+from src.char.BaseChar import BaseChar, SwitchPriority
 
 
 class Lucy(BaseChar):
@@ -10,9 +10,23 @@ class Lucy(BaseChar):
         super().__init__(*args, **kwargs)
         self.last_algorithm = -1
 
+    def get_switch_priority(self, current_char=None, has_intro=False, target_low_con=False):
+        if has_intro and current_char and current_char.char_name in {'char_rebecca'}:
+            return SwitchPriority.MUST
+        return super().get_switch_priority(current_char, has_intro, target_low_con)
+
+    def opener_skills(self):
+        """Payload then Pulse Interference right after the intro: the two
+        skill casts start passive TCP regen and light the signature weapon
+        passives before the basic chain. No-ops instantly when on cooldown."""
+        if self.click_resonance(time_out=0.8)[0]:
+            self.continues_normal_attack(0.35)
+            self.click_resonance(time_out=0.8)
+
     def do_perform(self):
         if self.has_intro:
             self.continues_normal_attack(1.0)
+            self.opener_skills()
         elif self.flying():
             self.wait_down()
 
@@ -22,6 +36,7 @@ class Lucy(BaseChar):
             if self.click_resonance(time_out=0.8)[0]:
                 self.last_algorithm = time.time()
                 self.perform_algorithm_compaction()
+                self.top_off_con()
                 return self.switch_next_char()
 
         if not self.need_fast_perform() and self.click_liberation(wait_if_cd_ready=0):
@@ -38,9 +53,11 @@ class Lucy(BaseChar):
                     break
                 self.click()
                 self.task.next_frame()
+            self.top_off_con()
             return self.switch_next_char()
 
         self.continues_normal_attack(0.8)
+        self.top_off_con()
         self.switch_next_char()
 
     def perform_algorithm_compaction(self):
