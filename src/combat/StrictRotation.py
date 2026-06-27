@@ -61,13 +61,13 @@ Beat = namedtuple('Beat', ['name', 'char', 'intro', 'outro'])
 # outro beat and the next beat is always entered on an intro.
 #
 #   First Rotation -- opener (played once):
-#     1  Sk   ba x5, ha, skill, ba x3, lib, ba x2, ha, echo, outro
+#     1  Sk   ba x5, ha, skill, ba x5, ha, echo, outro   (ShoreKeeper does not use her liberation)
 #     2  Iuno intro, echo, skill (cancel), lib, jump, skill, ba x3, skill, ha, outro
 #     3  Aug  intro, ha, skill, ha, lib (Eternal Oath), skill x3,
 #             Sunborne x9, Protector (2nd lib), echo, outro
 #
 #   Second Rotation onward -- loop (repeats); "third rotation: do quickswaps":
-#     4  Sk   enhanced intro, ba x3, lib, ba x2, ha, skill, ba x2 (2nd cancelled by outro), outro
+#     4  Sk   enhanced intro, ba x5, ha, skill, ba x2 (2nd cancelled by outro), outro   (no liberation)
 #     5  Iuno intro, echo, skill (energy), jump, lib, skill, ba x3, skill, ha, outro
 #     6  Aug  intro quickswap: ha, skill, (Eternal Oath -> Sunborne -> Protector
 #             only when liberation is off cooldown), echo, outro  -> back to 4
