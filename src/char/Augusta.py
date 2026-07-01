@@ -96,15 +96,23 @@ class Augusta(BaseChar):
         # 2nd lib. Captured at entry because attacks below can clear the flag.
         got_iuno_outro = self.has_intro
         self._heavy_or_prowess()                 # ha
-        self.click_liberation()                  # lib -> summons griffin
+        # Augusta's griffin liberation has a ~25s cooldown, so it is NOT up every
+        # burst. Cast it only when actually off cooldown -- has_cd() is the OCR'd
+        # timer; the lit-icon check false-positives during the CD and made the cast
+        # fail 'no effect' every burst. griffin = did it actually summon this burst.
+        griffin = False
+        if not self.has_cd('liberation'):
+            griffin = self.click_liberation()    # lib -> summons griffin
+        else:
+            self.logger.info('Augusta burst: griffin lib on cooldown (~25s), skipping griffin')
         self.click_resonance()                   # skill
         self._heavy_or_prowess()                 # ha
-        # 2nd lib (majesty recast). It does NOT require Augusta to be airborne, so
-        # just cast it -- no skill/jump launch, no fly wait. Only when she entered
-        # via Iuno's full-concerto outro (else there is no buff to stack). At 1..8
-        # stacks don't skip -- build up to the target first (bounded), then cast;
-        # 0 (OCR miss) and >=target cast directly.
-        if got_iuno_outro:
+        # 2nd lib (majesty) is a RECAST of the griffin, so it can only fire when the
+        # griffin actually summoned this burst -- and only when she entered via
+        # Iuno's full-concerto outro (else there is no buff to stack). At 1..8 stacks
+        # don't skip -- build up to the target first (bounded), then cast; 0 (OCR
+        # miss) and >=target cast directly.
+        if got_iuno_outro and griffin:
             stacks = self.buff_stacks()
             if 1 <= stacks < self.AUGUSTA_BUFF_STACK_TARGET:
                 self.logger.info(
@@ -113,11 +121,9 @@ class Augusta(BaseChar):
                 self.task.wait_until(
                     lambda: self.buff_stacks() >= self.AUGUSTA_BUFF_STACK_TARGET,
                     post_action=self._build_buff_stack, time_out=5)
-            self.perform_majesty()               # 2nd lib (majesty recast)
-        else:
-            self.logger.info(
-                'Augusta burst: no full-concerto Iuno outro this entry, '
-                'skipping 2nd lib (no buff to stack)')
+            self.perform_majesty()               # 2nd lib (recast of the griffin)
+        elif got_iuno_outro:
+            self.logger.info('Augusta burst: no griffin this burst, skipping 2nd lib')
         if with_basics:
             basic_attacks(self, 3)               # ba123
             heavy(self)                          # ha
