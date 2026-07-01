@@ -25,6 +25,9 @@ class Augusta(BaseChar):
     # single-digit box read [] at max stacks); still excludes the crescent icon.
     AUGUSTA_BUFF_STACK_BOX = (1886, 1789, 1950, 1839)
     AUGUSTA_BUFF_STACK_TARGET = 9
+    # Augusta's 2nd lib ("liberation 2", a hold) unlocks only after this many
+    # enhanced-skill casts.
+    ENHANCED_SKILL_COUNT = 3
 
     def do_perform(self):
         from src.combat.StrictRotation import get_strict_rotation
@@ -102,20 +105,6 @@ class Augusta(BaseChar):
         # Captured at entry because the attacks below can clear the flag.
         got_iuno_outro = self.has_intro
         self._heavy_or_prowess()                 # ha
-        # Build the stacking buff up to the target BEFORE the griffin, while
-        # attacking. The 2nd lib is the griffin's RECAST and is castable only for a
-        # SHORT window right after the summon, so we must NOT spend time (buff build
-        # or a skill/ha) between the griffin and the recast -- do all the building
-        # first. The build is real damage, so the time isn't wasted. The buff climbs
-        # as she attacks (no digit at the lowest -> reads 0), so any read below the
-        # target means keep building.
-        if got_iuno_outro and self.buff_stacks() < self.AUGUSTA_BUFF_STACK_TARGET:
-            self.logger.info(
-                f'Augusta burst: building buff to {self.AUGUSTA_BUFF_STACK_TARGET} '
-                f'before the griffin')
-            self.task.wait_until(
-                lambda: self.buff_stacks() >= self.AUGUSTA_BUFF_STACK_TARGET,
-                post_action=self._build_buff_stack, time_out=5)
         # Griffin liberation. Her summon does NOT take her out of the team view, so
         # confirm the cast by the lib ENERGY draining (icon no longer available)
         # rather than the not-in-team signal (which always false-reports 'no
@@ -127,16 +116,15 @@ class Augusta(BaseChar):
                 post_action=self.send_liberation_key, time_out=1.0))
             if griffin:
                 self.record_liberation_use()
-        # 2nd lib = the griffin's RECAST -- fire it IMMEDIATELY after the summon,
-        # within its window (no skill/ha runs between the griffin and this recast).
-        # Do NOT gate on the Augusta_lib2 icon: its detection is unreliable and was
-        # skipping the cast even when it was castable ('lib2 recast icon not lit').
-        # perform_majesty no-ops safely if the recast truly can't fire.
-        if got_iuno_outro and griffin:
-            self.perform_majesty()               # 2nd lib (recast)
-        elif got_iuno_outro:
-            self.logger.info('Augusta burst: no griffin this burst, skipping 2nd lib')
-        self.click_resonance()                   # skill
+        # 2nd lib ("liberation 2", a HOLD) unlocks ONLY after 3 ENHANCED-SKILL casts
+        # -- that is why perform_majesty kept failing 'not in animation' (it was
+        # never unlocked). So cast the enhanced skill x3 first (these also build her
+        # stacking buff toward ~9-10), THEN hold the lib. Deterministic 3 casts is
+        # the real unlock, so we no longer depend on the flaky buff-badge OCR.
+        for _ in range(self.ENHANCED_SKILL_COUNT):
+            self.click_resonance()               # enhanced skill (x3 -> unlocks lib 2)
+        if got_iuno_outro:
+            self.perform_majesty()               # 2nd lib (hold)
         self._heavy_or_prowess()                 # ha
         if with_basics:
             basic_attacks(self, 3)               # ba123
