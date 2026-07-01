@@ -420,6 +420,25 @@ class TestStrictRotation(unittest.TestCase):
         self.assertFalse(topoff_concerto(char, 2.5))  # bailed below full
         self.assertEqual(builds['n'], 0)              # swapped before building
 
+    def test_topoff_concerto_no_early_bail_when_toggle_off(self):
+        # 'Switch While Building' off -> build to full even when a target is ready
+        from src.combat.StrictRotation import topoff_concerto
+        task = FakeTask(target_team(),
+                        char_config={'Augusta Iuno SK Switch While Building': False})
+        char = task.chars[2]
+        full = {'v': False}
+        char.is_con_full = lambda: full['v']
+        task._choose_switch_target = lambda c, has_intro=False, target_low_con=False: task.chars[0]
+        task._target_has_switch_cd = lambda c: False  # target ready, but toggle off
+        builds = {'n': 0}
+
+        def build_and_fill(*a, **k):
+            builds['n'] += 1
+            full['v'] = True
+        char.click = build_and_fill
+        self.assertTrue(topoff_concerto(char, 2.5))   # built to full, ignored ready target
+        self.assertEqual(builds['n'], 1)
+
     def test_topoff_concerto_builds_when_no_switch_target(self):
         # target on switch CD -> no early bail -> builds (bounded here so fast)
         from src.combat.StrictRotation import topoff_concerto

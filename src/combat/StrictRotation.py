@@ -121,16 +121,34 @@ OUTRO_TOPOFF_TIME_OUT = 2.5
 AGGRESSIVE_CANCEL_CONFIG_KEY = 'Augusta Iuno SK Aggressive Cancel'
 AGGRESSIVE_CANCEL_DEFAULT = True
 
+# While building concerto, hand off as soon as a swap is possible (a target is off
+# its switch CD) even below full -- rather than holding the character to reach 100%
+# for the outro. Default on; turn off to always build to full for the outro buff.
+SWITCH_WHILE_BUILDING_CONFIG_KEY = 'Augusta Iuno SK Switch While Building'
+SWITCH_WHILE_BUILDING_DEFAULT = True
+
+
+def _config_flag(task, key, default):
+    """Read a boolean Character Config toggle, falling back to ``default`` when the
+    config is absent or unreadable."""
+    char_config = getattr(task, 'char_config', None)
+    if char_config is None:
+        return default
+    try:
+        return bool(char_config.get(key, default))
+    except Exception:
+        return default
+
 
 def aggressive_cancel_enabled(task):
     """Whether aggressive animation-cancel is enabled (config toggle, default on)."""
-    char_config = getattr(task, 'char_config', None)
-    if char_config is None:
-        return AGGRESSIVE_CANCEL_DEFAULT
-    try:
-        return bool(char_config.get(AGGRESSIVE_CANCEL_CONFIG_KEY, AGGRESSIVE_CANCEL_DEFAULT))
-    except Exception:
-        return AGGRESSIVE_CANCEL_DEFAULT
+    return _config_flag(task, AGGRESSIVE_CANCEL_CONFIG_KEY, AGGRESSIVE_CANCEL_DEFAULT)
+
+
+def switch_while_building_enabled(task):
+    """Whether to switch out during concerto building as soon as a swap is possible
+    (config toggle, default on)."""
+    return _config_flag(task, SWITCH_WHILE_BUILDING_CONFIG_KEY, SWITCH_WHILE_BUILDING_DEFAULT)
 
 
 class StrictRotation:
@@ -545,8 +563,9 @@ def topoff_concerto(char, time_out, checks_per_action=3):
         # switch "whenever possible": if a target is ready (off its 1s switch CD)
         # hand off now even below full rather than holding out for the outro. In
         # the scripted rotation the coordinator keeps others NO, so this is False
-        # until the beat advances (outro beats still build to full).
-        if can_switch_now(char):
+        # until the beat advances (outro beats still build to full). Config-gated
+        # (default on) -- turn it off to always build to full for the outro buff.
+        if switch_while_building_enabled(char.task) and can_switch_now(char):
             return False
         build_concerto(char)                        # one high-yield build action
         for _ in range(max(1, checks_per_action)):  # then poll the ring frequently

@@ -71,6 +71,7 @@ char_config_option = ConfigOption('Character Config', {
     'Augusta Iuno SK Strict Rotation': True,
     'Augusta Iuno SK Variable Rotation': False,
     'Augusta Iuno SK Aggressive Cancel': True,
+    'Augusta Iuno SK Switch While Building': True,
 }, description='Character Config', config_description={
     'Augusta Iuno SK Strict Rotation': 'Fixed quickswap rotation for the Augusta/Iuno/ShoreKeeper team',
     'Augusta Iuno SK Variable Rotation': 'Same rotation but characters can linger on field for '
@@ -79,6 +80,10 @@ char_config_option = ConfigOption('Character Config', {
     'Augusta Iuno SK Aggressive Cancel': 'Jump-cancel the last action before a non-outro swap so swaps '
                                          'are immediate. Turn off for plain swaps. Outro swaps are never '
                                          'cancelled (the char is grounded so the buff lands).',
+    'Augusta Iuno SK Switch While Building': 'While building concerto, switch out as soon as a swap is '
+                                             'possible (even below full, no outro buff) instead of holding '
+                                             'to reach 100%. Turn off to always build to full for the outro. '
+                                             'Only affects the reactive phase; the opener always builds to full.',
 }, show_at_tab=True, icon=FluentIcon.PEOPLE)
 
 monthly_card_config_option = ConfigOption('Monthly Card Config', {
