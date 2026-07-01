@@ -154,11 +154,11 @@ class VariableRotation(StrictRotation):
             self.advance()
             raise
         # Windowed dwell: hold the field for the (possibly extended) window doing
-        # productive filler, then hand off. With window == 0 this reduces to the
-        # strict quickswap (outro beats still get the bounded top-off below).
+        # productive filler, then hand off through the shared _handoff (which
+        # re-confirms fullness and forces the outro on a full ring). With window
+        # == 0 this reduces to the strict quickswap.
         outro_ready = self._dwell(char, beat, window)
-        self.advance()
-        char.switch_next_char(free_intro=outro_ready)
+        self._handoff(char, beat, outro_ready)
         return True
 
     def _dwell(self, char, beat, window):

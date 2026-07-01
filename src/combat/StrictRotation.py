@@ -308,14 +308,38 @@ class StrictRotation:
                 char.is_con_full, post_action=lambda: build_concerto(char),
                 time_out=OUTRO_TOPOFF_TIME_OUT))
             logger.info(f'{self.LABEL} outro beat {beat.name}: con_full={outro_ready}')
-        self.advance()
-        # When concerto is confirmed full, force the outro path (free_intro=True)
-        # instead of letting switch_next_char re-read the ring -- that second read
-        # can flicker to 0.99 and silently downgrade the swap to a plain swap,
-        # dropping the outro buff transfer/timing even though the ring is full.
-        # Gated on outro_ready so a not-actually-full ring never fakes an outro.
-        char.switch_next_char(free_intro=outro_ready)
+        self._handoff(char, beat, outro_ready)
         return True
+
+    def _handoff(self, char, beat, outro_ready):
+        """Advance the beat and switch out, forcing the outro when the ring is full.
+
+        This is the correct, code-observable substitute for a post-swap "detect a
+        missed outro and switch back": that is NOT implementable from this layer.
+        Whether the in-game outro physically fired is invisible here --
+        ``last_outro_time`` is set unconditionally on the outro *decision*, the
+        outgoing char's concerto is zeroed on swap, and any later con read targets
+        the *incoming* char's ring. And re-entering ``run_current`` for the same
+        char would make ``resync`` silently skip beats. So instead of recovering a
+        wasted ring AFTER it is gone, guarantee it PRE-COMMIT: if this is an outro
+        beat and the ring is (still) full, leave via the outro path (free_intro)
+        so the engine never downgrades a genuinely full ring to a plain swap.
+
+        The extra ``is_con_full`` re-read below catches a ring that settled to full
+        on the final top-off action after ``wait_until`` had already returned. It
+        is gated on ``beat.outro`` so non-outro beats never poll concerto, and on
+        ``not outro_ready`` so a confirmed-full beat is not read twice.
+        """
+        if beat.outro and not outro_ready and char.is_con_full():
+            outro_ready = True
+            logger.info(f'{self.LABEL} outro beat {beat.name}: ring confirmed full at '
+                        f'hand-off, forcing outro')
+        self.advance()
+        # free_intro forces the outro path instead of letting switch_next_char
+        # re-read the ring -- that second read can flicker to 0.99 and silently
+        # downgrade a full ring to a plain swap, dropping the buff transfer. Gated
+        # on outro_ready so a not-actually-full ring never fakes an outro.
+        char.switch_next_char(free_intro=outro_ready)
 
 
 def get_strict_rotation(task):

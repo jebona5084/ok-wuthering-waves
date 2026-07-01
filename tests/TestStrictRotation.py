@@ -239,6 +239,31 @@ class TestStrictRotation(unittest.TestCase):
         # already full -> force the outro path (free_intro=True)
         self.assertEqual(events, [('beat', 'sk_open2'), ('switch', (), {'free_intro': True})])
 
+    def test_run_current_outro_forces_outro_when_ring_settles_full_at_handoff(self):
+        # The ring reads not-full during the bounded top-off (wait_until returns
+        # False) but is full at the final hand-off re-confirm -> force the outro
+        # (free_intro=True) instead of wasting the full ring on a plain swap. This
+        # is the pre-commit "use the ring while it is still full" guard; there is
+        # deliberately NO post-swap detect-and-switch-back (undetectable + desyncs).
+        task = FakeTask(target_team())
+        rot = StrictRotation(task)
+        rot.maybe_reset()
+        sk = task.chars[2]
+        events = []
+        con_calls = {'n': 0}
+
+        def con_full():
+            con_calls['n'] += 1
+            return con_calls['n'] >= 3  # False for the 2 top-off reads, True at _handoff
+
+        sk.perform_beat = lambda beat: events.append(('beat', beat.name))
+        sk.is_con_full = con_full
+        sk.switch_next_char = lambda *a, **k: events.append(('switch', a, k))
+        rot.index = 6  # sk_open2, outro=True
+        self.assertTrue(rot.run_current(sk))
+        self.assertEqual(events, [('beat', 'sk_open2'), ('switch', (), {'free_intro': True})])
+        self.assertEqual(rot.index, 7)  # advanced exactly once (no re-entry / switch-back)
+
     def test_run_current_non_outro_beat_switches_plain(self):
         task = FakeTask(target_team())
         rot = StrictRotation(task)
