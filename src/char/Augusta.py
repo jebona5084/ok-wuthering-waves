@@ -96,13 +96,22 @@ class Augusta(BaseChar):
         # 2nd lib. Captured at entry because attacks below can clear the flag.
         got_iuno_outro = self.has_intro
         self._heavy_or_prowess()                 # ha
-        # Augusta's griffin liberation has a ~25s cooldown, so it is NOT up every
-        # burst. Attempt it and read the result: click_liberation returns True only
-        # if the griffin actually summoned, False if it was on cooldown ('no
-        # effect'). Do NOT pre-gate on has_cd('liberation') -- at burst entry that
-        # timer is stale from Iuno's turn (she just cast her own lib) and would
-        # wrongly skip the griffin every time.
-        griffin = self.click_liberation()        # lib -> summons griffin (True if fired)
+        # Augusta's griffin summon does NOT take her out of the team view, so the
+        # normal click_liberation (which waits for the not-in-team signal) always
+        # logs 'no effect' even when the griffin actually summoned -- and that made
+        # us wrongly skip the 2nd lib. Fire-and-continue instead: press the lib key
+        # and confirm the cast by the lib ENERGY draining (icon no longer
+        # available), not the not-in-team signal. If it's on cooldown / not
+        # castable the energy never drains, so griffin stays False and we skip the
+        # recast. ~25s cooldown means it won't be up every burst, which is fine.
+        griffin = False
+        if self.liberation_available():
+            griffin = bool(self.task.wait_until(
+                lambda: not self.liberation_available(),
+                post_action=self.send_liberation_key, time_out=1.0))
+            if griffin:
+                self.record_liberation_use()
+                self.sleep(0.2)                  # let the summon settle
         self.click_resonance()                   # skill
         self._heavy_or_prowess()                 # ha
         # 2nd lib (majesty) is a RECAST of the griffin, so it can only fire when the
