@@ -48,6 +48,13 @@ class FakeTask:
     def next_frame(self, *a, **k):
         pass
 
+    # default: no other switch target -> can_switch_now False -> keep building
+    def _choose_switch_target(self, char, has_intro=False, target_low_con=False):
+        return char
+
+    def _target_has_switch_cd(self, char):
+        return False
+
 
 class FakeChar:
     """Rich stand-in that records perform_beat / switch and supports the dwell

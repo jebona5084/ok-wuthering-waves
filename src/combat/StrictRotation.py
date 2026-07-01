@@ -503,6 +503,28 @@ def build_concerto(char):
     char.click()
 
 
+def can_switch_now(char):
+    """Whether a hand-off is possible right now: another character is a valid
+    switch target AND is off its ~1s switch cooldown.
+
+    Lets the concerto top-off bail out early -- while building concerto we switch
+    "whenever possible" even below full, finishing the ring on the next visit,
+    rather than holding the character to reach 100%. During the SCRIPTED rotation
+    the coordinator marks every other char NO until the beat advances, so
+    ``_choose_switch_target`` returns the current char and this stays False (the
+    opener's outro beats still build to full); it only bites where role-based
+    priorities allow a swap -- the reactive phase.
+    """
+    task = char.task
+    try:
+        target = task._choose_switch_target(char, has_intro=False)
+        if not target or target is char:
+            return False
+        return not task._target_has_switch_cd(target)
+    except Exception:  # unknown target state -> keep building (do not swap blindly)
+        return False
+
+
 def topoff_concerto(char, time_out, checks_per_action=3):
     """Build concerto to full, re-reading the ring MORE FREQUENTLY than once per
     build action, so the outro fires the instant the ring completes.
@@ -520,6 +542,12 @@ def topoff_concerto(char, time_out, checks_per_action=3):
     while time.time() - start < time_out:
         if char.is_con_full():
             return True
+        # switch "whenever possible": if a target is ready (off its 1s switch CD)
+        # hand off now even below full rather than holding out for the outro. In
+        # the scripted rotation the coordinator keeps others NO, so this is False
+        # until the beat advances (outro beats still build to full).
+        if can_switch_now(char):
+            return False
         build_concerto(char)                        # one high-yield build action
         for _ in range(max(1, checks_per_action)):  # then poll the ring frequently
             if char.is_con_full():

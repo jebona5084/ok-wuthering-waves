@@ -55,6 +55,13 @@ class FakeTask:
     def next_frame(self, *a, **k):
         pass
 
+    # default: no other switch target -> can_switch_now False -> keep building
+    def _choose_switch_target(self, char, has_intro=False, target_low_con=False):
+        return char
+
+    def _target_has_switch_cd(self, char):
+        return False
+
 
 def team(*names):
     return [make_char(n) for n in names]
@@ -397,6 +404,40 @@ class TestStrictRotation(unittest.TestCase):
         with self.assertRaises(ValueError):
             rot.run_current(aug)
         self.assertEqual(rot.index, 1)
+
+    def test_topoff_concerto_bails_early_when_switch_possible(self):
+        # "switch whenever possible": if a ready target exists, the top-off hands
+        # off below full instead of building to 100% (no build action even runs).
+        from src.combat.StrictRotation import topoff_concerto
+        task = FakeTask(target_team())
+        char = task.chars[2]
+        char.is_con_full = lambda: False
+        other = task.chars[0]
+        task._choose_switch_target = lambda c, has_intro=False, target_low_con=False: other
+        task._target_has_switch_cd = lambda c: False  # target ready
+        builds = {'n': 0}
+        char.click = lambda *a, **k: builds.__setitem__('n', builds['n'] + 1)
+        self.assertFalse(topoff_concerto(char, 2.5))  # bailed below full
+        self.assertEqual(builds['n'], 0)              # swapped before building
+
+    def test_topoff_concerto_builds_when_no_switch_target(self):
+        # target on switch CD -> no early bail -> builds (bounded here so fast)
+        from src.combat.StrictRotation import topoff_concerto
+        task = FakeTask(target_team())
+        char = task.chars[2]
+        full = {'v': False}
+        char.is_con_full = lambda: full['v']
+        # target exists but is on switch cooldown -> can_switch_now False
+        task._choose_switch_target = lambda c, has_intro=False, target_low_con=False: task.chars[0]
+        task._target_has_switch_cd = lambda c: True
+        builds = {'n': 0}
+
+        def build_and_fill(*a, **k):
+            builds['n'] += 1
+            full['v'] = True  # one build reaches full
+        char.click = build_and_fill
+        self.assertTrue(topoff_concerto(char, 2.5))   # built to full, no early bail
+        self.assertEqual(builds['n'], 1)
 
     def test_get_strict_rotation_is_cached_per_task(self):
         task = FakeTask(target_team())
