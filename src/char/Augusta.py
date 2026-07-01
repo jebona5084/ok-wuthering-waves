@@ -67,12 +67,12 @@ class Augusta(BaseChar):
             self.click_resonance()
             heavy(self)
 
-    def _heavy_or_prowess(self):
+    def _heavy_or_prowess(self, cancel=False):
         from src.combat.StrictRotation import heavy
         if self.check_prowess():
             self.perform_prowess()
         else:
-            heavy(self)
+            heavy(self, cancel=cancel)
 
     def majesty_stacks(self):
         """OCR the Majesty badge count (0 if no digit / can't be read).
@@ -140,7 +140,10 @@ class Augusta(BaseChar):
         # (Augusta_lib1), lib 2 on check_majesty() (Augusta_lib2). Calling
         # perform_majesty WITHOUT that gate is what caused 'not in animation' -- lib2
         # was not lit yet. So follow the reference and gate on the icons.
-        from src.combat.StrictRotation import heavy, basic_attacks
+        from src.combat.StrictRotation import heavy, basic_attacks, aggressive_cancel_enabled
+        agg = aggressive_cancel_enabled(self.task)
+        # First heavy flows straight into the plunge skill -- do NOT cancel it, a
+        # jump here would disturb that transition.
         self._heavy_or_prowess()                 # ha (charged/heavy)
         self.click_resonance()                   # resonance skill (plunge)
         # 1st Resonance Liberation -- fire when its icon (Augusta_lib1) is lit.
@@ -156,13 +159,15 @@ class Augusta(BaseChar):
         # Majesty), but the empowered hit is strongest at max -- so HOLD until the
         # Majesty badge reads >= TARGET (keep attacking to build it), then cast.
         self._build_and_cast_majesty()           # 2nd lib at max stacks
-        self._heavy_or_prowess()                 # ha
+        # ha and the trailing basics are mid-sequence melee filler -- jump-cancel
+        # their (long) recovery when aggressive cancel is on to cut station time.
+        self._heavy_or_prowess(cancel=agg)       # ha
         if with_basics:
             # forte_check: these basics are trailing filler AFTER the 2nd lib, so
             # spending the prowess/enhanced heavy the instant it is up here is
             # pure upside -- it cannot rob the Majesty build (already spent above).
-            basic_attacks(self, 3, forte_check=self.check_prowess)  # ba123
-            heavy(self)                          # ha
+            basic_attacks(self, 3, forte_check=self.check_prowess, cancel=agg)  # ba123
+            heavy(self, cancel=agg)              # ha
         self.send_echo_key()                     # echo
 
     def _do_perform_default(self):

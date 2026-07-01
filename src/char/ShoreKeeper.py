@@ -107,7 +107,8 @@ class ShoreKeeper(BaseChar):
         skill, forte) so the ring is naturally full by the outro swap -- there is
         no busy-wait top-off, which would stall and break the rotation.
         """
-        from src.combat.StrictRotation import basic_attacks
+        from src.combat.StrictRotation import basic_attacks, aggressive_cancel_enabled
+        agg = aggressive_cancel_enabled(self.task)  # jump-cancel filler basics when on
         if beat.name == 'sk_open':
             # 3. lib (immediately if ready), echo, ba12345, ha, skill
             # Liberation up front so its team buff is up at once. Echo then feeds
@@ -118,7 +119,7 @@ class ShoreKeeper(BaseChar):
             # forte_check: spend her enhanced heavy the moment it charges during
             # the basics (it is a big concerto source) instead of letting it
             # overcap until the next scripted heavy.
-            basic_attacks(self, 5, forte_check=self.is_mouse_forte_full)
+            basic_attacks(self, 5, forte_check=self.is_mouse_forte_full, cancel=agg)
             self.heavy_attack()
             self.click_resonance()
         elif beat.name == 'sk_open2':
@@ -127,7 +128,7 @@ class ShoreKeeper(BaseChar):
             # frame-checked (no-op on cooldown) and bank the rest of the concerto.
             self._cast_liberation_now()
             self.click_echo(time_out=0)
-            basic_attacks(self, 5, forte_check=self.is_mouse_forte_full)
+            basic_attacks(self, 5, forte_check=self.is_mouse_forte_full, cancel=agg)
             self.heavy_attack()
             self.task.jump(after_sleep=0.2)
             self._spend_skill_and_forte()
