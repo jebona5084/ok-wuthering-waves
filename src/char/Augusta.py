@@ -1,4 +1,3 @@
-import re
 import time
 
 from src.char.BaseChar import BaseChar
@@ -11,18 +10,6 @@ switch_time = 3
 
 
 class Augusta(BaseChar):
-    # Augusta's stacking buff shows a count badge that maxes at 10. The second
-    # liberation (majesty recast) fires once the buff reaches AUGUSTA_BUFF_STACK_
-    # TARGET stacks (9 -- she reliably reaches 9 within the window, and waiting for
-    # the 10th often timed out and skipped the recast). The count is read by OCR
-    # over the badge, which sits bottom-CENTRE, just above the resource gems
-    # (confirmed from in-game captures) -- NOT by the liberation icons at
-    # bottom-right. Box is 3840x2160 reference px (auto-scaled to the live
-    # resolution); enable debug logging to see the value read and nudge
-    # AUGUSTA_BUFF_STACK_BOX if it's off.
-    AUGUSTA_BUFF_STACK_BOX = (1780, 1755, 1945, 1845)
-    AUGUSTA_BUFF_STACK_TARGET = 9
-
     def do_perform(self):
         from src.combat.StrictRotation import get_strict_rotation
         if get_strict_rotation(self.task).run_current(self):
@@ -82,25 +69,10 @@ class Augusta(BaseChar):
         self.click_liberation()                  # lib -> summons griffin
         self.click_resonance()                   # skill
         self._heavy_or_prowess()                 # ha
-        # 2nd lib = the majesty RECAST, and it is an AERIAL cast: Augusta must be
-        # airborne for it. Grounded, the lib2 recast prompt never appears (and the
-        # game won't accept it), so it was skipped even at max stacks. Build to the
-        # stack target first (the buff enables the recast), then LAUNCH with her
-        # skill and cast from the air. The recast needs no liberation energy, so we
-        # don't gate on it -- only on being airborne.
-        if self.wait_for_buff_stacks():
-            if not self.flying():
-                self.click_resonance()           # skill -> launches her airborne
-                self.task.wait_until(self.flying, time_out=1.5)
-            if self.flying():
-                self.perform_majesty()           # 2nd lib (aerial recast)
-            else:
-                self.logger.info(
-                    'Augusta burst: could not get airborne for the 2nd lib, skipping')
+        if self.check_majesty():                 # 2nd lib (majesty recast)
+            self.perform_majesty()
         else:
-            self.logger.info(
-                f'Augusta burst: buff under {self.AUGUSTA_BUFF_STACK_TARGET} '
-                f'stacks, skipping 2nd lib')
+            self.logger.info('Augusta burst: majesty (2nd lib) not detected, skipping')
         if with_basics:
             basic_attacks(self, 3)               # ba123
             heavy(self)                          # ha
@@ -118,7 +90,7 @@ class Augusta(BaseChar):
         timeout = lambda: time.time() - start < time_out + 3
         while timeout():
             self.cycle_start()
-            if self.check_majesty() and self.buff_stacks_full():
+            if self.check_majesty():
                 self.logger.debug('Augusta performs majesty')
                 if self.perform_majesty():
                     self.send_echo_key()
@@ -140,7 +112,7 @@ class Augusta(BaseChar):
                         if time.time() - start > time_out and not self.flying():
                             return self.switch_next_char()
                 else:
-                    if self.check_majesty() and self.buff_stacks_full():
+                    if self.check_majesty():
                         self.wait_down()
                         if self.perform_majesty():
                             self.send_echo_key()
@@ -191,50 +163,6 @@ class Augusta(BaseChar):
 
     def check_majesty(self):
         return self.current_liberation() > 0 and bool(self.task.find_one('Augusta_lib2', threshold=0.5))
-
-    def buff_stacks(self):
-        """OCR Augusta's stacking-buff count badge (0 if it can't be read)."""
-        box = self.task.box_of_screen_scaled(
-            3840, 2160, *self.AUGUSTA_BUFF_STACK_BOX,
-            name='augusta_buff_stacks', hcenter=True)
-        stacks = 0
-        for t in self.task.ocr(box=box, match=re.compile(r'\d+')):
-            try:
-                stacks = max(stacks, int(re.sub(r'\D', '', t.name)))
-            except (ValueError, TypeError):
-                continue
-        self.logger.debug(f'Augusta buff_stacks = {stacks}')
-        return stacks
-
-    def buff_stacks_full(self):
-        return self.buff_stacks() >= self.AUGUSTA_BUFF_STACK_TARGET
-
-    def _build_buff_stack(self):
-        """One stack-building action for the 2nd-lib wait.
-
-        Plain basic attacks barely move the buff, so a basics-only wait stalls a
-        stack short (the "stuck at 9" symptom). Augusta's forte heavy / prowess
-        builds the bulk of it, so spend that when it is up and otherwise fall back
-        to a basic attack.
-        """
-        if self.is_forte_full() and self.heavy_click_forte(self.is_forte_full):
-            return
-        if self.check_prowess() and self.perform_prowess():
-            return
-        self.click()
-
-    def wait_for_buff_stacks(self, time_out=5):
-        """Build to max buff stacks before the 2nd lib, attacking while waiting.
-
-        Returns True once the buff is full. Gives up (returns False) after
-        ``time_out`` so a missing/unreadable badge can't stall the rotation --
-        the caller then skips the 2nd lib for this cycle. Still exits the instant
-        the buff reads full, so a quick build returns immediately.
-        """
-        if self.buff_stacks_full():
-            return True
-        return bool(self.task.wait_until(
-            self.buff_stacks_full, post_action=self._build_buff_stack, time_out=time_out))
 
     def check_prowess(self):
         long_inner_box = 'target_enemy_long_inner'
