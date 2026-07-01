@@ -97,16 +97,29 @@ class Augusta(BaseChar):
         # the badge only exists after that switch. Capture it here (has_intro is
         # set by a full-concerto switch): only THEN do we run the buff-stack OCR /
         # 2nd lib. Captured at entry because attacks below can clear the flag.
+        # got_iuno_outro (has_intro, set by the full-concerto outro) gates the whole
+        # buff/2nd-lib pipeline -- the stacking buff only exists after Iuno's outro.
+        # Captured at entry because the attacks below can clear the flag.
         got_iuno_outro = self.has_intro
         self._heavy_or_prowess()                 # ha
-        # Augusta's griffin summon does NOT take her out of the team view, so the
-        # normal click_liberation (which waits for the not-in-team signal) always
-        # logs 'no effect' even when the griffin actually summoned -- and that made
-        # us wrongly skip the 2nd lib. Fire-and-continue instead: press the lib key
-        # and confirm the cast by the lib ENERGY draining (icon no longer
-        # available), not the not-in-team signal. If it's on cooldown / not
-        # castable the energy never drains, so griffin stays False and we skip the
-        # recast. ~25s cooldown means it won't be up every burst, which is fine.
+        # Build the stacking buff up to the target BEFORE the griffin, while
+        # attacking. The 2nd lib is the griffin's RECAST and is castable only for a
+        # SHORT window right after the summon, so we must NOT spend time (buff build
+        # or a skill/ha) between the griffin and the recast -- do all the building
+        # first. The build is real damage, so the time isn't wasted. The buff climbs
+        # as she attacks (no digit at the lowest -> reads 0), so any read below the
+        # target means keep building.
+        if got_iuno_outro and self.buff_stacks() < self.AUGUSTA_BUFF_STACK_TARGET:
+            self.logger.info(
+                f'Augusta burst: building buff to {self.AUGUSTA_BUFF_STACK_TARGET} '
+                f'before the griffin')
+            self.task.wait_until(
+                lambda: self.buff_stacks() >= self.AUGUSTA_BUFF_STACK_TARGET,
+                post_action=self._build_buff_stack, time_out=5)
+        # Griffin liberation. Her summon does NOT take her out of the team view, so
+        # confirm the cast by the lib ENERGY draining (icon no longer available)
+        # rather than the not-in-team signal (which always false-reports 'no
+        # effect'). On cooldown the energy never drains -> griffin stays False.
         griffin = False
         if self.liberation_available():
             griffin = bool(self.task.wait_until(
@@ -114,28 +127,22 @@ class Augusta(BaseChar):
                 post_action=self.send_liberation_key, time_out=1.0))
             if griffin:
                 self.record_liberation_use()
-                self.sleep(0.2)                  # let the summon settle
-        self.click_resonance()                   # skill
-        self._heavy_or_prowess()                 # ha
-        # 2nd lib (majesty) is a RECAST of the griffin, so it can only fire when the
-        # griffin actually summoned this burst -- and only when she entered via
-        # Iuno's full-concerto outro (else there is no buff to stack). The buff
-        # BUILDS UP as she attacks: at its lowest it shows no digit (reads 0) and
-        # climbs to ~10. So ANY reading below the target (0..8) means build it up
-        # first -- keep attacking until it reaches the target, THEN cast. Bounded,
-        # and the build is real damage so the time isn't wasted. >=target casts now.
+        # 2nd lib = the griffin's RECAST -- fire it IMMEDIATELY after the summon,
+        # within its window, gated on the lit lib2 recast icon (NOT check_majesty,
+        # which also requires lib energy the griffin just spent). No skill/ha runs
+        # between the griffin and this recast.
         if got_iuno_outro and griffin:
-            stacks = self.buff_stacks()
-            if stacks < self.AUGUSTA_BUFF_STACK_TARGET:
+            if self.task.wait_until(
+                    lambda: bool(self.task.find_one('Augusta_lib2', threshold=0.5)),
+                    time_out=1.0):
+                self.perform_majesty()           # 2nd lib (recast)
+            else:
                 self.logger.info(
-                    f'Augusta burst: buff {stacks}, building to '
-                    f'{self.AUGUSTA_BUFF_STACK_TARGET} before the 2nd lib')
-                self.task.wait_until(
-                    lambda: self.buff_stacks() >= self.AUGUSTA_BUFF_STACK_TARGET,
-                    post_action=self._build_buff_stack, time_out=5)
-            self.perform_majesty()               # 2nd lib (recast of the griffin)
+                    'Augusta burst: lib2 recast icon not lit after griffin, skipping 2nd lib')
         elif got_iuno_outro:
             self.logger.info('Augusta burst: no griffin this burst, skipping 2nd lib')
+        self.click_resonance()                   # skill
+        self._heavy_or_prowess()                 # ha
         if with_basics:
             basic_attacks(self, 3)               # ba123
             heavy(self)                          # ha
