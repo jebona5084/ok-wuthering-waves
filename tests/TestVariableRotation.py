@@ -281,6 +281,26 @@ class TestReactiveOutroTopoff(unittest.TestCase):
         self.assertEqual(char.attacks, [])   # below threshold
         self.assertEqual(kwargs, {})         # not full -> plain swap
 
+    def test_aggressive_builds_concerto_instead_of_basics(self):
+        # aggressive=True uses the high-yield build_concerto wait, NOT plain basics
+        # (Iuno's concerto barely moves on basics). Lower threshold catches her
+        # earlier.
+        task = self._inactive_task()
+        char = _ToppedChar(task, con=0.65, con_full=False)
+        kwargs = {}
+        reactive_outro_topoff(char, kwargs, threshold=0.6, aggressive=True)
+        self.assertEqual(char.attacks, [])                # did NOT use basics
+        self.assertEqual(len(task.wait_until_calls), 1)   # used the build_concerto wait
+
+    def test_aggressive_below_threshold_is_noop(self):
+        task = self._inactive_task()
+        char = _ToppedChar(task, con=0.5, con_full=False)
+        kwargs = {}
+        reactive_outro_topoff(char, kwargs, threshold=0.6, aggressive=True)
+        self.assertEqual(char.attacks, [])
+        self.assertEqual(task.wait_until_calls, [])       # below 0.6 -> no build
+        self.assertEqual(kwargs, {})
+
 
 if __name__ == '__main__':
     unittest.main()

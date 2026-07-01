@@ -212,12 +212,15 @@ class Iuno(BaseChar):
             self.sleep(0.1 - (time.time() - cycle_start))
 
     def switch_next_char(self, *args, **kwargs):
-        # Reactive-phase outro hardening: finish a near-full ring before swapping
-        # so Iuno's outro (which carries her buffs to Augusta) actually fires
-        # instead of a plain swap. No-op while the scripted rotation drives, and
-        # only tops off in [0.7, 1) so mid-rotation quickswaps are untouched.
+        # Reactive-phase outro hardening: Iuno's outro carries her buffs to Augusta
+        # but only fires at FULL concerto, and do_everything returns as soon as her
+        # special heavy fires -- often short of full. When the scripted rotation is
+        # NOT driving, build the ring the rest of the way with her high-yield
+        # sources (echo/skill/lib via build_concerto) from a lower threshold, then
+        # force the outro. Bounded so it can't stall; below 0.6 con she just swaps
+        # and accumulates for next time.
         from src.combat.VariableRotation import reactive_outro_topoff
-        reactive_outro_topoff(self, kwargs)
+        reactive_outro_topoff(self, kwargs, threshold=0.6, aggressive=True)
         return super().switch_next_char(*args, **kwargs)
 
     def on_combat_end(self, chars):
