@@ -46,7 +46,7 @@ class ShoreKeeper(BaseChar):
     def _do_perform_default(self):
         if self.has_intro:
             self._intro_wait()
-        self.continues_normal_attack(1.2)
+        self.continues_normal_attack(2.2)
         self.click_echo(time_out=0)
         self.click_liberation()
         # click_resonance returns a (clicked, duration, animated) tuple; index
@@ -74,7 +74,7 @@ class ShoreKeeper(BaseChar):
         skill, forte) so the ring is naturally full by the outro swap -- there is
         no busy-wait top-off, which would stall and break the rotation.
         """
-        from src.combat.StrictRotation import basic_attacks, heavy
+        from src.combat.StrictRotation import basic_attacks
         if beat.name == 'sk_open':
             # 3. echo, ba123, lib, ba12, ha, skill
             # Echo first: it is ShoreKeeper's main concerto source (her basic
@@ -85,18 +85,21 @@ class ShoreKeeper(BaseChar):
             basic_attacks(self, 3)
             self.click_liberation()
             basic_attacks(self, 2)
-            heavy(self)
+            self.heavy_attack()
             self.click_resonance()
         elif beat.name == 'sk_open2':
             # 7. echo, ba12345, ha, outro
             self.click_echo(time_out=0)
             basic_attacks(self, 5)
-            heavy(self)
+            self.heavy_attack()
+            self.task.jump(after_sleep=0.2)
             # sk_open2 alone omitted lib+skill, so it entered the central top-off
             # with the least concerto banked. Spend them here too (each is
             # frame-checked and a no-op when on cooldown), mirroring sk_open.
             self.click_liberation()
             self._spend_skill_and_forte()
+            self.continues_normal_attack(1.6)
+            self.heavy_attack()
         elif beat.name in ('sk_intro', 'sk_loop'):
             # 10 / 16. super intro, build concerto, outro
             if beat.intro:
