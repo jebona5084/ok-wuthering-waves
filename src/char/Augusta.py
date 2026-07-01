@@ -141,7 +141,10 @@ class Augusta(BaseChar):
             self.logger.info('Augusta burst: lib2 (majesty) icon not lit, skipping 2nd lib')
         self._heavy_or_prowess()                 # ha
         if with_basics:
-            basic_attacks(self, 3)               # ba123
+            # forte_check: these basics are trailing filler AFTER the 2nd lib, so
+            # spending the prowess/enhanced heavy the instant it is up here is
+            # pure upside -- it cannot rob the Majesty build (already spent above).
+            basic_attacks(self, 3, forte_check=self.check_prowess)  # ba123
             heavy(self)                          # ha
         self.send_echo_key()                     # echo
 

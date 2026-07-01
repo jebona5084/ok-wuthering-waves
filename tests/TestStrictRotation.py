@@ -10,6 +10,7 @@ import unittest
 
 from src.combat.StrictRotation import (
     StrictRotation, BEATS, LOOP_START, TEAM, MUST, NO, NORMAL, get_strict_rotation,
+    try_spend_forte, basic_attacks,
 )
 
 
@@ -304,6 +305,70 @@ class TestStrictRotation(unittest.TestCase):
         first = get_strict_rotation(task)
         second = get_strict_rotation(task)
         self.assertIs(first, second)
+
+
+class _ForteTask:
+    def __init__(self):
+        self.clicks = 0
+
+    def click(self):
+        self.clicks += 1
+
+
+class _ForteChar:
+    """Minimal char stand-in for the forte-spending helpers: a full gauge is
+    drained by one ``heavy_click_forte`` call (as the real hold does)."""
+
+    def __init__(self, forte_full=False):
+        self.task = _ForteTask()
+        self._full = forte_full
+        self.heavy_calls = 0
+
+    def sleep(self, _):
+        pass
+
+    def is_forte_full(self):
+        return self._full
+
+    def heavy_click_forte(self, check):
+        self.heavy_calls += 1
+        self._full = False  # spending the forte heavy drains the gauge
+        return True
+
+
+class TestForteSpending(unittest.TestCase):
+    """Contract for try_spend_forte / basic_attacks(forte_check=...): spend the
+    forte heavy the instant it is ready, and never touch it otherwise."""
+
+    def test_spends_when_full_and_reports_true(self):
+        c = _ForteChar(forte_full=True)
+        self.assertTrue(try_spend_forte(c))
+        self.assertEqual(c.heavy_calls, 1)
+        self.assertFalse(c._full)
+
+    def test_noop_when_not_full_and_reports_false(self):
+        c = _ForteChar(forte_full=False)
+        self.assertFalse(try_spend_forte(c))
+        self.assertEqual(c.heavy_calls, 0)
+
+    def test_uses_supplied_detector(self):
+        c = _ForteChar(forte_full=False)  # generic detector says empty...
+        self.assertTrue(try_spend_forte(c, lambda: True))  # ...but custom says ready
+        self.assertEqual(c.heavy_calls, 1)
+
+    def test_basic_attacks_spends_forte_promptly_then_noops(self):
+        c = _ForteChar(forte_full=True)
+        basic_attacks(c, 3, interval=0, forte_check=c.is_forte_full)
+        self.assertEqual(c.task.clicks, 3)
+        # full at the first hit -> spent once; empty for the remaining hits
+        self.assertEqual(c.heavy_calls, 1)
+
+    def test_basic_attacks_without_forte_check_never_spends(self):
+        c = _ForteChar(forte_full=True)
+        basic_attacks(c, 3, interval=0)
+        self.assertEqual(c.task.clicks, 3)
+        self.assertEqual(c.heavy_calls, 0)
+        self.assertTrue(c._full)  # forte left untouched (reserved, e.g. Iuno)
 
 
 if __name__ == '__main__':

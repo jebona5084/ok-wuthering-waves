@@ -353,15 +353,42 @@ def safe_cancel(char, settle=0.06):
     char.task.jump(after_sleep=0.03)
 
 
-def basic_attacks(char, n, interval=0.12, cancel=False):
+def try_spend_forte(char, check=None):
+    """Spend the forte / enhanced heavy the instant its gauge is ready.
+
+    Forte builds continuously in combat; if it is only cashed in at the sparse
+    ``heavy()`` beats it OVERCAPS and the surplus is wasted. Call this at more
+    points (after basic strings, between casts) so a full gauge is spent
+    promptly. ``check`` is the character's own forte detector (defaults to the
+    generic ``is_forte_full``; ShoreKeeper uses ``is_mouse_forte_full``, Augusta
+    ``check_prowess``). It is a single cheap frame read and the whole call is a
+    no-op when the gauge is not ready, so it adds no dead time. Returns True if
+    the forte heavy fired.
+    """
+    check = check or char.is_forte_full
+    if check():
+        return bool(char.heavy_click_forte(check))
+    return False
+
+
+def basic_attacks(char, n, interval=0.12, cancel=False, forte_check=None):
     """Send an ``n``-hit basic-attack string (the user's ``ba123`` notation).
 
     With ``cancel=True`` the basic string's recovery is jump-cancelled once the
     last hit has registered, speeding the transition into the next action.
+
+    ``forte_check`` opts into spending the forte/enhanced heavy AS SOON AS it is
+    ready -- polled after every hit instead of only at the next ``heavy()`` beat,
+    so a gauge that fills mid-string is cashed in before it overcaps. Pass the
+    character's own forte detector; the check is cheap and a no-op when the gauge
+    is not ready. Leave it None for characters that RESERVE forte for a special
+    action (Iuno's special heavy) so it is not spent out from under them.
     """
     for _ in range(max(0, n)):
         char.task.click()
         char.sleep(interval)
+        if forte_check is not None:
+            try_spend_forte(char, forte_check)
     if cancel and n > 0:
         safe_cancel(char)
 

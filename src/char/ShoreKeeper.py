@@ -67,10 +67,12 @@ class ShoreKeeper(BaseChar):
         self.click_echo(time_out=0)
         if self.click_liberation():
             self.dodge_cancel()  # cut the Stellarealm-deploy recovery
-        # click_resonance returns a (clicked, duration, animated) tuple; index
-        # [0] so the forte fallback actually runs when the skill didn't fire.
-        if not self.click_resonance()[0]:
-            self.heavy_click_forte(self.is_mouse_forte_full)
+        # Spend BOTH skill and forte every cycle rather than the forte only when
+        # the skill failed: her enhanced heavy is a big concerto source, so
+        # checking it every cycle (not just on a skill miss) cashes it in before
+        # it overcaps. heavy_click_forte no-ops when the gauge is not charged.
+        self.click_resonance()
+        self.heavy_click_forte(self.is_mouse_forte_full)
         self.switch_next_char()
 
     def _intro_wait(self):
@@ -100,16 +102,19 @@ class ShoreKeeper(BaseChar):
             # concerto needed to outro and apply her outro buff. time_out=0 only
             # fires when the echo is off cooldown, so it is safe to always call.
             self.click_echo(time_out=0)
-            basic_attacks(self, 3)
+            # forte_check: spend her enhanced heavy the moment it charges during
+            # the basics (it is a big concerto source) instead of letting it
+            # overcap until the next scripted heavy.
+            basic_attacks(self, 3, forte_check=self.is_mouse_forte_full)
             if self.click_liberation():
                 self.dodge_cancel()
-            basic_attacks(self, 2)
+            basic_attacks(self, 2, forte_check=self.is_mouse_forte_full)
             self.heavy_attack()
             self.click_resonance()
         elif beat.name == 'sk_open2':
             # 7. echo, ba12345, ha, outro
             self.click_echo(time_out=0)
-            basic_attacks(self, 5)
+            basic_attacks(self, 5, forte_check=self.is_mouse_forte_full)
             self.heavy_attack()
             self.task.jump(after_sleep=0.2)
             # sk_open2 alone omitted lib+skill, so it entered the central top-off
