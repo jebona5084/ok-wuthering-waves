@@ -211,5 +211,14 @@ class Iuno(BaseChar):
                 self.click()
             self.sleep(0.1 - (time.time() - cycle_start))
 
+    def switch_next_char(self, *args, **kwargs):
+        # Reactive-phase outro hardening: finish a near-full ring before swapping
+        # so Iuno's outro (which carries her buffs to Augusta) actually fires
+        # instead of a plain swap. No-op while the scripted rotation drives, and
+        # only tops off in [0.7, 1) so mid-rotation quickswaps are untouched.
+        from src.combat.VariableRotation import reactive_outro_topoff
+        reactive_outro_topoff(self, kwargs)
+        return super().switch_next_char(*args, **kwargs)
+
     def on_combat_end(self, chars):
         self.switch_other_char()

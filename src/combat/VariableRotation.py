@@ -215,3 +215,32 @@ def get_active_rotation(task):
     if var.config_enabled():
         return var
     return get_strict_rotation(task)
+
+
+# Reactive-phase outro top-off threshold (mirrors ShoreKeeper's 0.7): finish a
+# near-full ring before swapping so the swap outros instead of wasting it.
+REACTIVE_TOPOFF_THRESHOLD = 0.7
+
+
+def reactive_outro_topoff(char, kwargs, threshold=REACTIVE_TOPOFF_THRESHOLD):
+    """Finish a near-full concerto ring before a REACTIVE-phase swap so it outros.
+
+    Call from a character's ``switch_next_char`` override, passing that call's
+    ``kwargs`` (mutated in place): when the ring is in ``[threshold, 1)`` spend up
+    to 0.8s of basics to reach full, then force ``free_intro`` when it is full so
+    the engine leaves via the outro (buff transfer) instead of a plain swap that
+    wastes a near-full ring.
+
+    Gated on the scripted rotation being INACTIVE: while the coordinator drives
+    (the opener) it already tops off before its own hand-offs, and a top-off here
+    would double up or outro a non-outro beat. So this only bites in the reactive
+    phase that sustains the fight after STOP_AFTER_FIRST_ROTATION hands off.
+    """
+    if get_active_rotation(char.task).is_active():
+        return kwargs
+    con = char.get_current_con()
+    if threshold <= con < 1:
+        char.continues_normal_attack(0.8, until_con_full=True)
+    if char.is_con_full():
+        kwargs['free_intro'] = True
+    return kwargs

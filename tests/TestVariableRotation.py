@@ -12,7 +12,7 @@ from unittest.mock import patch
 from src.combat.StrictRotation import Beat, StrictRotation
 from src.combat.VariableRotation import (
     VariableRotation, Window, Extension, compute_window, CONFIG_KEY,
-    get_variable_rotation, get_active_rotation, WINDOWS,
+    get_variable_rotation, get_active_rotation, WINDOWS, reactive_outro_topoff,
 )
 
 
@@ -216,6 +216,70 @@ class TestRunCurrentWindows(unittest.TestCase):
         self.assertGreaterEqual(elapsed, 0.05)     # it actually held the field
         self.assertGreater(char.task.clicks, 0)    # ...doing productive filler
         self.assertEqual(char.switches, [False])
+
+
+class _ToppedChar:
+    """Stand-in for reactive_outro_topoff: records top-off attacks; topping off
+    reaches full."""
+
+    def __init__(self, task, con=0.0, con_full=False):
+        self.task = task
+        self._con = con
+        self._con_full = con_full
+        self.attacks = []
+
+    def get_current_con(self):
+        return self._con
+
+    def is_con_full(self):
+        return self._con_full
+
+    def continues_normal_attack(self, duration, **kwargs):
+        self.attacks.append((duration, kwargs))
+        self._con = 1.0
+        self._con_full = True
+
+
+class TestReactiveOutroTopoff(unittest.TestCase):
+    """reactive_outro_topoff: finish a near-full ring so a REACTIVE swap outros,
+    but stay inert while the scripted rotation is driving."""
+
+    def _active_task(self):
+        # target team + variable off -> strict rotation active by default
+        return FakeTask(target_team())
+
+    def _inactive_task(self):
+        # team mismatch -> neither strict nor variable is active (reactive phase)
+        return FakeTask([make_char('Augusta'), make_char('Iuno'), make_char('Verina')])
+
+    def test_noop_while_scripted_rotation_active(self):
+        char = _ToppedChar(self._active_task(), con=0.85, con_full=False)
+        kwargs = {}
+        reactive_outro_topoff(char, kwargs)
+        self.assertEqual(char.attacks, [])   # coordinator handles outros
+        self.assertEqual(kwargs, {})         # no forced outro
+
+    def test_tops_off_near_full_and_forces_outro(self):
+        char = _ToppedChar(self._inactive_task(), con=0.85, con_full=False)
+        kwargs = {}
+        reactive_outro_topoff(char, kwargs)
+        self.assertEqual(len(char.attacks), 1)
+        self.assertTrue(char.attacks[0][1].get('until_con_full'))
+        self.assertEqual(kwargs, {'free_intro': True})
+
+    def test_already_full_forces_outro_without_topoff(self):
+        char = _ToppedChar(self._inactive_task(), con=1.0, con_full=True)
+        kwargs = {}
+        reactive_outro_topoff(char, kwargs)
+        self.assertEqual(char.attacks, [])   # already full -> no wasted top-off
+        self.assertEqual(kwargs, {'free_intro': True})
+
+    def test_low_con_neither_tops_off_nor_forces(self):
+        char = _ToppedChar(self._inactive_task(), con=0.5, con_full=False)
+        kwargs = {}
+        reactive_outro_topoff(char, kwargs)
+        self.assertEqual(char.attacks, [])   # below threshold
+        self.assertEqual(kwargs, {})         # not full -> plain swap
 
 
 if __name__ == '__main__':

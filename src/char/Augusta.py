@@ -266,6 +266,14 @@ class Augusta(BaseChar):
             if isinstance(char, ShoreKeeper):
                 return char.auto_dodge(condition=self.flying)
 
+    def switch_next_char(self, *args, **kwargs):
+        # Reactive-phase outro hardening: finish a near-full ring before swapping
+        # so the swap outros (transfers her buff) instead of wasting it. No-op
+        # while the scripted rotation drives (it tops off before its own outros).
+        from src.combat.VariableRotation import reactive_outro_topoff
+        reactive_outro_topoff(self, kwargs)
+        return super().switch_next_char(*args, **kwargs)
+
     def on_combat_end(self, chars):
         next_char = str((self.index + 1) % len(chars) + 1)
         self.logger.debug(f'Augusta on_combat_end {self.index} switch next char: {next_char}')
