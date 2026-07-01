@@ -16,7 +16,7 @@ class Augusta(BaseChar):
     # stacks -- below that it wastes the empowered hit. Read by OCR over the badge;
     # box is 3840x2160 reference px (auto-scaled). Nudge the box if the digit isn't
     # being read (enable debug logging to see the value).
-    AUGUSTA_BUFF_STACK_BOX = (1812, 1736, 1904, 1820)
+    AUGUSTA_BUFF_STACK_BOX = (1892, 1750, 1992, 1836)
     AUGUSTA_BUFF_STACK_TARGET = 9
 
     def do_perform(self):
