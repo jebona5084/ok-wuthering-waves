@@ -46,6 +46,7 @@ class ShoreKeeper(BaseChar):
     def _do_perform_default(self):
         if self.has_intro:
             self._intro_wait()
+        self.continues_normal_attack(1.2)
         self.click_echo(time_out=0)
         self.click_liberation()
         # click_resonance returns a (clicked, duration, animated) tuple; index
