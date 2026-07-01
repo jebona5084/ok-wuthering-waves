@@ -82,21 +82,21 @@ class Augusta(BaseChar):
         self.click_liberation()                  # lib -> summons griffin
         self.click_resonance()                   # skill
         self._heavy_or_prowess()                 # ha
-        # 2nd lib = the majesty RECAST. The griffin cast above already spent the
-        # liberation energy, so check_majesty() -- which ALSO requires
-        # current_liberation() > 0 -- is always False here and the recast was
-        # being skipped even at 10 stacks. Build to max buff stacks first (the
-        # buff enables/lights the recast), then gate on the lit lib2 recast icon
-        # alone; the recast needs no liberation energy.
+        # 2nd lib = the majesty RECAST, and it is an AERIAL cast: Augusta must be
+        # airborne for it. Grounded, the lib2 recast prompt never appears (and the
+        # game won't accept it), so it was skipped even at max stacks. Build to the
+        # stack target first (the buff enables the recast), then LAUNCH with her
+        # skill and cast from the air. The recast needs no liberation energy, so we
+        # don't gate on it -- only on being airborne.
         if self.wait_for_buff_stacks():
-            if self.task.wait_until(
-                    lambda: bool(self.task.find_one('Augusta_lib2', threshold=0.5)),
-                    time_out=0.6):
-                self.perform_majesty()           # 2nd lib (recast)
+            if not self.flying():
+                self.click_resonance()           # skill -> launches her airborne
+                self.task.wait_until(self.flying, time_out=1.5)
+            if self.flying():
+                self.perform_majesty()           # 2nd lib (aerial recast)
             else:
                 self.logger.info(
-                    'Augusta burst: at max stacks but lib2 recast icon not lit, '
-                    'skipping 2nd lib')
+                    'Augusta burst: could not get airborne for the 2nd lib, skipping')
         else:
             self.logger.info(
                 f'Augusta burst: buff under {self.AUGUSTA_BUFF_STACK_TARGET} '
