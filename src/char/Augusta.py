@@ -16,7 +16,10 @@ class Augusta(BaseChar):
     # stacks -- below that it wastes the empowered hit. Read by OCR over the badge;
     # box is 3840x2160 reference px (auto-scaled). Nudge the box if the digit isn't
     # being read (enable debug logging to see the value).
-    AUGUSTA_BUFF_STACK_BOX = (1892, 1750, 1992, 1836)
+    # Tight box on JUST the digit at the badge's lower-right. The full-badge box
+    # made OCR read the clock icon as the letter "L" (debug: all_boxes [L_0.63]);
+    # excluding the clock/arrows leaves only the number for the \d+ match.
+    AUGUSTA_BUFF_STACK_BOX = (1935, 1788, 2002, 1846)
     AUGUSTA_BUFF_STACK_TARGET = 9
 
     def do_perform(self):
