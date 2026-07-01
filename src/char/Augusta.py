@@ -80,16 +80,25 @@ class Augusta(BaseChar):
         self.click_liberation()                  # lib -> summons griffin
         self.click_resonance()                   # skill
         self._heavy_or_prowess()                 # ha
-        if self.check_majesty():                 # 2nd lib (majesty recast)
-            # only recast the 2nd lib at max buff stacks; build to it first
-            if self.wait_for_buff_stacks():
-                self.perform_majesty()
+        # 2nd lib = the majesty RECAST. The griffin cast above already spent the
+        # liberation energy, so check_majesty() -- which ALSO requires
+        # current_liberation() > 0 -- is always False here and the recast was
+        # being skipped even at 10 stacks. Build to max buff stacks first (the
+        # buff enables/lights the recast), then gate on the lit lib2 recast icon
+        # alone; the recast needs no liberation energy.
+        if self.wait_for_buff_stacks():
+            if self.task.wait_until(
+                    lambda: bool(self.task.find_one('Augusta_lib2', threshold=0.5)),
+                    time_out=0.6):
+                self.perform_majesty()           # 2nd lib (recast)
             else:
                 self.logger.info(
-                    f'Augusta burst: buff under {self.AUGUSTA_BUFF_STACK_TARGET} '
-                    f'stacks, skipping 2nd lib')
+                    'Augusta burst: at max stacks but lib2 recast icon not lit, '
+                    'skipping 2nd lib')
         else:
-            self.logger.info('Augusta burst: majesty (2nd lib) not detected, skipping')
+            self.logger.info(
+                f'Augusta burst: buff under {self.AUGUSTA_BUFF_STACK_TARGET} '
+                f'stacks, skipping 2nd lib')
         if with_basics:
             basic_attacks(self, 3)               # ba123
             heavy(self)                          # ha
