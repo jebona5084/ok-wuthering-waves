@@ -97,36 +97,37 @@ class Augusta(BaseChar):
         got_iuno_outro = self.has_intro
         self._heavy_or_prowess()                 # ha
         self.click_liberation()                  # lib -> summons griffin
-        self.click_resonance()                   # skill
-        self._heavy_or_prowess()                 # ha
-        # 2nd lib only at >= TARGET buff stacks. Below that, DON'T cast it and
-        # DON'T wait/stall -- just skip it and continue the rotation; she keeps
-        # building stacks and casts the recast on a later burst once she reaches
-        # the target. Single-frame read, no blocking.
-        if not got_iuno_outro:
-            self.logger.info(
-                'Augusta burst: no full-concerto Iuno outro this entry, '
-                'skipping 2nd lib (no buff to stack)')
-        else:
+        # Build the buff to target BEFORE the launch, while grounded. Only when she
+        # entered via Iuno's full-concerto outro (else there is no buff to stack).
+        # At 1..8 don't skip -- keep attacking up to the target; bounded so a stuck
+        # badge can't stall. 0 (OCR miss) and >=target fall straight through to cast.
+        if got_iuno_outro:
             stacks = self.buff_stacks()
             if 1 <= stacks < self.AUGUSTA_BUFF_STACK_TARGET:
-                # 1..8: do NOT skip -- keep attacking to build the buff up to the
-                # target, THEN cast. Bounded so a stuck/unreadable badge can't stall
-                # the rotation forever.
                 self.logger.info(
                     f'Augusta burst: {stacks} stacks, building to '
                     f'{self.AUGUSTA_BUFF_STACK_TARGET} before the 2nd lib')
                 self.task.wait_until(
                     lambda: self.buff_stacks() >= self.AUGUSTA_BUFF_STACK_TARGET,
                     post_action=self._build_buff_stack, time_out=5)
-            # 0 (OCR miss), >= target, or just built up -> cast. The 2nd lib is an
-            # AERIAL recast: get airborne first -- the skill launches her but is
-            # usually on CD by here (spent above), so fall back to a jump (no CD).
-            if not self.flying():
-                if not self.click_resonance()[0]:  # skill launch if available...
-                    self.task.jump(after_sleep=0.1)  # ...else jump (no cooldown)
+        # skill: this is the rotation's single skill cast AND the launcher for the
+        # aerial 2nd lib. It MUST be cast fresh right here -- a plain jump does not
+        # put her in fly state (confirmed from the debug log), and if the skill were
+        # spent earlier it would be on CD with nothing to launch her. So: skill ->
+        # (airborne) 2nd lib -> ha, rather than skill -> ha -> 2nd lib (which landed
+        # her before the recast and made it fail).
+        launched = self.click_resonance()[0]     # skill -> airborne
+        if got_iuno_outro:
+            if launched:
                 self.task.wait_until(self.flying, time_out=1.5)
+            else:
+                self.logger.info('Augusta burst: skill launch not available, 2nd lib may whiff')
             self.perform_majesty()               # 2nd lib (aerial recast)
+        else:
+            self.logger.info(
+                'Augusta burst: no full-concerto Iuno outro this entry, '
+                'skipping 2nd lib (no buff to stack)')
+        self._heavy_or_prowess()                 # ha
         if with_basics:
             basic_attacks(self, 3)               # ba123
             heavy(self)                          # ha
