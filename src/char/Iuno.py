@@ -100,12 +100,14 @@ class Iuno(BaseChar):
         # under-buffed.
         cast1 = self.click_resonance(post_sleep=0.4)      # skill charge 1 -> buff 1
         basic_attacks(self, 4)                            # ba1234 (no cancel)
-        # 2nd charge should already be available; verify briefly before casting.
-        ready2 = self.task.wait_until(self.resonance_available, time_out=0.5)
-        cast2 = self.click_resonance(post_sleep=0.4)      # skill charge 2 -> buff 2
-        self.logger.info(
-            f'Iuno burst skills: cast1={bool(cast1[0])} 2nd_ready={bool(ready2)} '
-            f'cast2={bool(cast2[0])}')
+        # 2nd charge: a 2-charge skill shows a RECHARGE cooldown on its icon right
+        # after charge 1, so resonance_available()/has_cd false-negatives and the
+        # gated click_resonance skipped the 2nd cast on 18 of 19 bursts -- Iuno then
+        # under-generated concerto AND only carried one of her two buffs to Augusta.
+        # The charge is actually available, so FORCE the cast with a direct key send
+        # rather than gating on the CD detection (harmless no-op if truly empty).
+        self.send_resonance_key(post_sleep=0.4)           # skill charge 2 -> buff 2
+        self.logger.info(f'Iuno burst skills: cast1={bool(cast1[0])} cast2=forced')
         basic_attacks(self, 1)                            # ba
         # ha: Iuno's special heavy (the extra-action prompt) applies a buff that
         # transfers on the outro. Give the prompt a brief moment to appear after
