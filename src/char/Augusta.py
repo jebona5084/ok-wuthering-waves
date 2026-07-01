@@ -20,7 +20,10 @@ class Augusta(BaseChar):
     # empty space right of the badge; (1892.. full badge) caught the clock and OCR
     # read it as "L". This sits between: the clock's lower-right where the number
     # renders.
-    AUGUSTA_BUFF_STACK_BOX = (1908, 1796, 1958, 1846)
+    # Digit center pinned from an in-game hover readout: normalized (0.501, 0.840)
+    # => (1924, 1814) in 3840x2160. Tight box around it, excluding the crescent
+    # icon up-left (which OCR read as 'L').
+    AUGUSTA_BUFF_STACK_BOX = (1902, 1789, 1946, 1839)
     AUGUSTA_BUFF_STACK_TARGET = 9
 
     def do_perform(self):
