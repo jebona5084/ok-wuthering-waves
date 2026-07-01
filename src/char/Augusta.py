@@ -84,7 +84,12 @@ class Augusta(BaseChar):
         # the target. Single-frame read, no blocking.
         stacks = self.buff_stacks()
         if stacks >= self.AUGUSTA_BUFF_STACK_TARGET:
-            self.perform_majesty()               # 2nd lib (majesty recast)
+            # the 2nd lib is an AERIAL recast: grounded, the recast won't come out.
+            # Launch with her skill, wait until airborne, then cast from the air.
+            if not self.flying():
+                self.click_resonance()           # skill -> launches her airborne
+                self.task.wait_until(self.flying, time_out=1.5)
+            self.perform_majesty()               # 2nd lib (aerial recast)
         else:
             self.logger.info(
                 f'Augusta burst: {stacks} < {self.AUGUSTA_BUFF_STACK_TARGET} stacks, '
