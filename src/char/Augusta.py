@@ -12,14 +12,16 @@ switch_time = 3
 
 class Augusta(BaseChar):
     # Augusta's stacking buff shows a count badge that maxes at 10. The second
-    # liberation (majesty recast) must only fire at max stacks -- recasting below
-    # 10 wastes the empowered hit. The count is read by OCR over the badge, which
-    # sits bottom-CENTRE, just above the resource gems (confirmed from in-game
-    # captures) -- NOT by the liberation icons at bottom-right. Box is 3840x2160
-    # reference px (auto-scaled to the live resolution); enable debug logging to
-    # see the value being read and nudge AUGUSTA_BUFF_STACK_BOX if it's off.
+    # liberation (majesty recast) fires once the buff reaches AUGUSTA_BUFF_STACK_
+    # TARGET stacks (9 -- she reliably reaches 9 within the window, and waiting for
+    # the 10th often timed out and skipped the recast). The count is read by OCR
+    # over the badge, which sits bottom-CENTRE, just above the resource gems
+    # (confirmed from in-game captures) -- NOT by the liberation icons at
+    # bottom-right. Box is 3840x2160 reference px (auto-scaled to the live
+    # resolution); enable debug logging to see the value read and nudge
+    # AUGUSTA_BUFF_STACK_BOX if it's off.
     AUGUSTA_BUFF_STACK_BOX = (1780, 1755, 1945, 1845)
-    AUGUSTA_BUFF_STACK_TARGET = 10
+    AUGUSTA_BUFF_STACK_TARGET = 9
 
     def do_perform(self):
         from src.combat.StrictRotation import get_strict_rotation
