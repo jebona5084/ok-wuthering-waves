@@ -21,15 +21,16 @@ class Augusta(BaseChar):
     AUGUSTA_MAJESTY_TARGET = 9
 
     def do_perform(self):
-        from src.combat.StrictRotation import get_strict_rotation
-        if get_strict_rotation(self.task).run_current(self):
+        from src.combat.VariableRotation import get_active_rotation
+        if get_active_rotation(self.task).run_current(self):
             return
         self._do_perform_default()
 
     def get_switch_priority(self, current_char=None, has_intro=False, target_low_con=False):
-        from src.combat.StrictRotation import get_strict_rotation, MUST, NO
+        from src.combat.VariableRotation import get_active_rotation
+        from src.combat.StrictRotation import MUST, NO
         from src.char.BaseChar import SwitchPriority
-        rot = get_strict_rotation(self.task)
+        rot = get_active_rotation(self.task)
         if rot.is_active():
             priority = rot.priority_for(self.name)
             if priority == MUST:

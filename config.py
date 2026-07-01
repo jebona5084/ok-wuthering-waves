@@ -69,7 +69,13 @@ char_config_option = ConfigOption('Character Config', {
     'Iuno C6': False,
     'Chisa DPS': False,
     'Augusta Iuno SK Strict Rotation': True,
-}, description='Character Config', show_at_tab=True, icon=FluentIcon.PEOPLE)
+    'Augusta Iuno SK Variable Rotation': False,
+}, description='Character Config', config_description={
+    'Augusta Iuno SK Strict Rotation': 'Fixed quickswap rotation for the Augusta/Iuno/ShoreKeeper team',
+    'Augusta Iuno SK Variable Rotation': 'Same rotation but characters can linger on field for '
+                                         'condition-based windows (e.g. Augusta holds ~14s on an Iuno '
+                                         'intro). Overrides the strict rotation when on.',
+}, show_at_tab=True, icon=FluentIcon.PEOPLE)
 
 monthly_card_config_option = ConfigOption('Monthly Card Config', {
     'Check Monthly Card': True,
