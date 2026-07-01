@@ -114,9 +114,14 @@ class Iuno(BaseChar):
         # the basics build forte, then fire it -- and SETTLE afterwards so the buff
         # registers before run_current's outro swap cancels the recovery. Without
         # the settle the swap clips the special heavy and its buff is lost.
+        # The prompt does not appear the instant the basics end -- forte has to
+        # build first -- and a single 0.6s look almost always missed it (0 hits
+        # across every log). So poll longer AND keep attacking while we wait
+        # (post_action=self.click builds the forte that lights the prompt),
+        # mirroring how do_everything catches it inside its attack loop.
         special = self.task.wait_until(
-            lambda: self.task.find_feature("iuno_heavy", box="box_extra_action", threshold=0.6),
-            time_out=0.6)
+            lambda: self.task.find_feature("iuno_heavy", box="box_extra_action", threshold=0.55),
+            post_action=self.click, time_out=2.0)
         if special:
             self.heavy_attack()                          # special heavy -> buff
             self.last_heavy = time.time()
