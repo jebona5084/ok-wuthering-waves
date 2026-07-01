@@ -20,7 +20,7 @@ class Augusta(BaseChar):
     # empty space right of the badge; (1892.. full badge) caught the clock and OCR
     # read it as "L". This sits between: the clock's lower-right where the number
     # renders.
-    AUGUSTA_BUFF_STACK_BOX = (1898, 1768, 1952, 1820)
+    AUGUSTA_BUFF_STACK_BOX = (1908, 1796, 1958, 1846)
     AUGUSTA_BUFF_STACK_TARGET = 9
 
     def do_perform(self):
