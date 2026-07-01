@@ -21,9 +21,9 @@ class Augusta(BaseChar):
     # read it as "L". This sits between: the clock's lower-right where the number
     # renders.
     # Digit center pinned from an in-game hover readout: normalized (0.501, 0.840)
-    # => (1924, 1814) in 3840x2160. Tight box around it, excluding the crescent
-    # icon up-left (which OCR read as 'L').
-    AUGUSTA_BUFF_STACK_BOX = (1902, 1789, 1946, 1839)
+    # => (1924, 1814) in 3840x2160. Widened left so the TWO-digit "10" fits (a tight
+    # single-digit box read [] at max stacks); still excludes the crescent icon.
+    AUGUSTA_BUFF_STACK_BOX = (1886, 1789, 1950, 1839)
     AUGUSTA_BUFF_STACK_TARGET = 9
 
     def do_perform(self):
@@ -128,17 +128,12 @@ class Augusta(BaseChar):
             if griffin:
                 self.record_liberation_use()
         # 2nd lib = the griffin's RECAST -- fire it IMMEDIATELY after the summon,
-        # within its window, gated on the lit lib2 recast icon (NOT check_majesty,
-        # which also requires lib energy the griffin just spent). No skill/ha runs
-        # between the griffin and this recast.
+        # within its window (no skill/ha runs between the griffin and this recast).
+        # Do NOT gate on the Augusta_lib2 icon: its detection is unreliable and was
+        # skipping the cast even when it was castable ('lib2 recast icon not lit').
+        # perform_majesty no-ops safely if the recast truly can't fire.
         if got_iuno_outro and griffin:
-            if self.task.wait_until(
-                    lambda: bool(self.task.find_one('Augusta_lib2', threshold=0.5)),
-                    time_out=1.0):
-                self.perform_majesty()           # 2nd lib (recast)
-            else:
-                self.logger.info(
-                    'Augusta burst: lib2 recast icon not lit after griffin, skipping 2nd lib')
+            self.perform_majesty()               # 2nd lib (recast)
         elif got_iuno_outro:
             self.logger.info('Augusta burst: no griffin this burst, skipping 2nd lib')
         self.click_resonance()                   # skill
