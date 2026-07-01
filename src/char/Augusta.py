@@ -69,10 +69,11 @@ class Augusta(BaseChar):
         self.click_liberation()                  # lib -> summons griffin
         self.click_resonance()                   # skill
         self._heavy_or_prowess()                 # ha
-        if self.check_majesty():                 # 2nd lib (majesty recast)
-            self.perform_majesty()
-        else:
-            self.logger.info('Augusta burst: majesty (2nd lib) not detected, skipping')
+        # always attempt the 2nd lib (majesty recast) -- do NOT gate on
+        # check_majesty()/the lib2 icon, which read as unlit even when the recast
+        # is available and wrongly skipped it. perform_majesty no-ops safely (it
+        # checks the animation started and returns False) if it truly can't fire.
+        self.perform_majesty()                   # 2nd lib (majesty recast)
         if with_basics:
             basic_attacks(self, 3)               # ba123
             heavy(self)                          # ha
