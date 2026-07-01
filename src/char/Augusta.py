@@ -97,14 +97,12 @@ class Augusta(BaseChar):
         got_iuno_outro = self.has_intro
         self._heavy_or_prowess()                 # ha
         # Augusta's griffin liberation has a ~25s cooldown, so it is NOT up every
-        # burst. Cast it only when actually off cooldown -- has_cd() is the OCR'd
-        # timer; the lit-icon check false-positives during the CD and made the cast
-        # fail 'no effect' every burst. griffin = did it actually summon this burst.
-        griffin = False
-        if not self.has_cd('liberation'):
-            griffin = self.click_liberation()    # lib -> summons griffin
-        else:
-            self.logger.info('Augusta burst: griffin lib on cooldown (~25s), skipping griffin')
+        # burst. Attempt it and read the result: click_liberation returns True only
+        # if the griffin actually summoned, False if it was on cooldown ('no
+        # effect'). Do NOT pre-gate on has_cd('liberation') -- at burst entry that
+        # timer is stale from Iuno's turn (she just cast her own lib) and would
+        # wrongly skip the griffin every time.
+        griffin = self.click_liberation()        # lib -> summons griffin (True if fired)
         self.click_resonance()                   # skill
         self._heavy_or_prowess()                 # ha
         # 2nd lib (majesty) is a RECAST of the griffin, so it can only fire when the
