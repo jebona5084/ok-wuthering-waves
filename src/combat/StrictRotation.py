@@ -120,12 +120,18 @@ class StrictRotation:
     and lives for the whole combat. It is reset whenever a new combat starts.
     """
 
+    # Run the scripted rotation for the OPENER only (the "1st rotation", beats
+    # 0..LOOP_START-1), then turn off and hand the sustained fight to the reactive
+    # engine. Reset per new combat so the opener runs again each fight.
+    STOP_AFTER_FIRST_ROTATION = True
+
     def __init__(self, task):
         self.task = task
         self.index = 0
         self._last_combat_start = None
         self._last_inactive_state = None  # dedup for the inactive-reason log
         self._last_seen = None  # wall-clock of the last beat run, for flicker debounce
+        self._finished = False  # opener done -> strict rotation off (see STOP_AFTER_FIRST_ROTATION)
 
     # --- team / enablement -------------------------------------------------
     def team_names(self):
@@ -145,10 +151,19 @@ class StrictRotation:
             return True
 
     def is_active(self):
+        if self.STOP_AFTER_FIRST_ROTATION and self._finished:
+            return False
         return self.config_enabled() and self.team_matches()
 
     def _diagnose_inactive(self):
         """Log, once per state change, exactly why the strict rotation is off.
+        """
+        if self.STOP_AFTER_FIRST_ROTATION and self._finished:
+            return  # expected: opener done, handed off to the reactive engine
+        return self._diagnose_inactive_reason()
+
+    def _diagnose_inactive_reason(self):
+        """Report a config/team reason the strict rotation is off.
 
         Avoids per-frame spam by remembering the last (config, team) state. The
         switch-priority hook printing ``normal`` (instead of ``must``/``no``) is
@@ -190,12 +205,19 @@ class StrictRotation:
             logger.info('StrictRotation: brief combat re-entry, keeping rotation position')
         else:
             self.index = 0
+            self._finished = False  # new combat -> run the opener (1st rotation) again
             logger.info('StrictRotation reset to opener for new combat')
 
     def current_beat(self):
         return BEATS[self.index]
 
     def advance(self):
+        # Completing the last opener beat is the end of the "1st rotation" -> turn
+        # the scripted rotation off and let the reactive engine sustain the fight.
+        if self.STOP_AFTER_FIRST_ROTATION and self.index == LOOP_START - 1:
+            self._finished = True
+            logger.info('StrictRotation: 1st rotation (opener) complete -- '
+                        'turning off strict rotation, reactive engine takes over')
         self.index += 1
         if self.index >= len(BEATS):
             self.index = LOOP_START

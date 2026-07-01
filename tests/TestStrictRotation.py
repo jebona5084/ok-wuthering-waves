@@ -142,6 +142,31 @@ class TestStrictRotation(unittest.TestCase):
         rot.maybe_reset()
         self.assertEqual(rot.index, 0)
 
+    def test_stops_strict_after_opener(self):
+        # STOP_AFTER_FIRST_ROTATION: once the opener (beats 0..LOOP_START-1) is
+        # done, is_active() goes False so the reactive engine takes over.
+        rot = StrictRotation(FakeTask(target_team()))
+        self.assertTrue(rot.STOP_AFTER_FIRST_ROTATION)
+        self.assertTrue(rot.is_active())
+        for _ in range(LOOP_START):  # advance through the opener into the loop
+            rot.advance()
+        self.assertTrue(rot._finished)
+        self.assertFalse(rot.is_active())
+        self.assertEqual(rot.priority_for('Augusta'), NORMAL)
+
+    def test_new_combat_reenables_strict_after_finish(self):
+        task = FakeTask(target_team(), combat_start=1)
+        rot = StrictRotation(task)
+        rot.maybe_reset()
+        for _ in range(LOOP_START):
+            rot.advance()
+        self.assertTrue(rot._finished)
+        task.combat_start = 2  # genuinely new combat
+        rot.maybe_reset()
+        self.assertFalse(rot._finished)
+        self.assertTrue(rot.is_active())
+        self.assertEqual(rot.index, 0)
+
     def test_maybe_reset_keeps_position_on_brief_flicker(self):
         # A brief combat drop/reacquire (target lock flicker) changes combat_start
         # but must NOT rewind: keep the rotation position when a beat ran recently.
