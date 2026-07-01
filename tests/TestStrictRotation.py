@@ -142,6 +142,31 @@ class TestStrictRotation(unittest.TestCase):
         rot.maybe_reset()
         self.assertEqual(rot.index, 0)
 
+    def test_maybe_reset_keeps_position_on_brief_flicker(self):
+        # A brief combat drop/reacquire (target lock flicker) changes combat_start
+        # but must NOT rewind: keep the rotation position when a beat ran recently.
+        import time
+        task = FakeTask(target_team(), combat_start=100)
+        rot = StrictRotation(task)
+        rot.maybe_reset()
+        rot.index = 13
+        rot._last_seen = time.time()  # a beat just ran
+        task.combat_start = 200  # detection flickered and re-entered
+        rot.maybe_reset()
+        self.assertEqual(rot.index, 13)
+
+    def test_maybe_reset_rewinds_after_real_gap(self):
+        # A genuine new combat (long gap since the last beat) rewinds to the opener.
+        import time
+        task = FakeTask(target_team(), combat_start=100)
+        rot = StrictRotation(task)
+        rot.maybe_reset()
+        rot.index = 13
+        rot._last_seen = time.time() - (rot.COMBAT_FLICKER_TOLERANCE + 5)
+        task.combat_start = 200
+        rot.maybe_reset()
+        self.assertEqual(rot.index, 0)
+
     def test_run_current_executes_and_advances(self):
         task = FakeTask(target_team())
         rot = StrictRotation(task)

@@ -25,6 +25,7 @@ AI editing guide:
   the characters fall back to their original reactive ``do_perform``.
 """
 
+import time
 from collections import namedtuple
 
 try:  # keep this module importable without the full game stack (tests / tooling)
@@ -124,6 +125,7 @@ class StrictRotation:
         self.index = 0
         self._last_combat_start = None
         self._last_inactive_state = None  # dedup for the inactive-reason log
+        self._last_seen = None  # wall-clock of the last beat run, for flicker debounce
 
     # --- team / enablement -------------------------------------------------
     def team_names(self):
@@ -168,11 +170,25 @@ class StrictRotation:
                 f"required {sorted(TEAM)}")
 
     # --- beat bookkeeping --------------------------------------------------
+    # Combat detection flickers mid-fight (the target lock briefly drops during
+    # boss animations/movement), which changes task.combat_start and would rewind
+    # the whole rotation to the opener each time -- so the rotation never gets past
+    # the opener. Only treat a combat_start change as a genuinely NEW combat when
+    # there has been a real gap since the last beat ran; a quick drop-and-reacquire
+    # within this many seconds keeps the current rotation position.
+    COMBAT_FLICKER_TOLERANCE = 20
+
     def maybe_reset(self):
-        """Rewind to the opener when a fresh combat is detected."""
+        """Rewind to the opener on a genuinely fresh combat (not a brief flicker)."""
         combat_start = getattr(self.task, 'combat_start', None)
-        if combat_start != self._last_combat_start:
-            self._last_combat_start = combat_start
+        if combat_start == self._last_combat_start:
+            return
+        self._last_combat_start = combat_start
+        brief = (self._last_seen is not None
+                 and time.time() - self._last_seen < self.COMBAT_FLICKER_TOLERANCE)
+        if brief:
+            logger.info('StrictRotation: brief combat re-entry, keeping rotation position')
+        else:
             self.index = 0
             logger.info('StrictRotation reset to opener for new combat')
 
@@ -233,6 +249,7 @@ class StrictRotation:
             self._diagnose_inactive()
             return False
         self.maybe_reset()
+        self._last_seen = time.time()  # mark active-in-combat (for flicker debounce)
         beat = self.current_beat()
         if beat.char != char.name:
             if not self.resync(char.name):
