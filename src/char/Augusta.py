@@ -114,8 +114,11 @@ class Augusta(BaseChar):
         # click_resonance so each enhanced cast is actually registered.
         for _ in range(self.ENHANCED_SKILL_COUNT):
             self.click_resonance()               # enhanced skill = griffin (x3 -> unlocks lib 2)
+        self.sleep(0.3)                          # let the 3rd skill's animation finish
         if got_iuno_outro:
-            self.perform_majesty()               # 2nd lib (hold), now unlocked
+            # 2nd lib is a HOLD -- give it a longer hold window than the 0.6s
+            # default so the empowered liberation actually triggers.
+            self.perform_majesty(time_out=1.8)   # 2nd lib (hold), now unlocked
         self._heavy_or_prowess()                 # ha
         if with_basics:
             basic_attacks(self, 3)               # ba123
