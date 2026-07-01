@@ -116,14 +116,16 @@ class Augusta(BaseChar):
         self._heavy_or_prowess()                 # ha
         # 2nd lib (majesty) is a RECAST of the griffin, so it can only fire when the
         # griffin actually summoned this burst -- and only when she entered via
-        # Iuno's full-concerto outro (else there is no buff to stack). At 1..8 stacks
-        # don't skip -- build up to the target first (bounded), then cast; 0 (OCR
-        # miss) and >=target cast directly.
+        # Iuno's full-concerto outro (else there is no buff to stack). The buff
+        # BUILDS UP as she attacks: at its lowest it shows no digit (reads 0) and
+        # climbs to ~10. So ANY reading below the target (0..8) means build it up
+        # first -- keep attacking until it reaches the target, THEN cast. Bounded,
+        # and the build is real damage so the time isn't wasted. >=target casts now.
         if got_iuno_outro and griffin:
             stacks = self.buff_stacks()
-            if 1 <= stacks < self.AUGUSTA_BUFF_STACK_TARGET:
+            if stacks < self.AUGUSTA_BUFF_STACK_TARGET:
                 self.logger.info(
-                    f'Augusta burst: {stacks} stacks, building to '
+                    f'Augusta burst: buff {stacks}, building to '
                     f'{self.AUGUSTA_BUFF_STACK_TARGET} before the 2nd lib')
                 self.task.wait_until(
                     lambda: self.buff_stacks() >= self.AUGUSTA_BUFF_STACK_TARGET,
