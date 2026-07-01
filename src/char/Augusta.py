@@ -88,7 +88,7 @@ class Augusta(BaseChar):
             # Launch with her skill, wait until airborne, then cast from the air.
             if not self.flying():
                 self.click_resonance()           # skill -> launches her airborne
-                self.task.wait_until(self.flying, time_out=3.5)
+                self.task.wait_until(self.flying, time_out=1.5)
             self.perform_majesty()               # 2nd lib (aerial recast)
         else:
             self.logger.info(
