@@ -76,6 +76,18 @@ class Augusta(BaseChar):
         else:
             heavy(self)
 
+    def _build_buff_stack(self):
+        """One stack-building action for the build-to-target loop.
+
+        Plain basics barely move the buff; her forte heavy / prowess builds the
+        bulk of it, so spend that when it is up and otherwise fall back to a basic.
+        """
+        if self.is_forte_full() and self.heavy_click_forte(self.is_forte_full):
+            return
+        if self.check_prowess() and self.perform_prowess():
+            return
+        self.click()
+
     def _augusta_burst(self, with_basics):
         from src.combat.StrictRotation import heavy, basic_attacks
         # The stacking buff comes from Iuno's FULL-CONCERTO outro into Augusta, so
@@ -97,22 +109,24 @@ class Augusta(BaseChar):
                 'skipping 2nd lib (no buff to stack)')
         else:
             stacks = self.buff_stacks()
-            # stacks == 0 almost always means the badge could not be read (a genuine
-            # 0 right after the outro is unlikely), so don't let an OCR miss block
-            # the recast -- only skip on a CONFIDENT below-target count (1..target-1).
-            if stacks == 0 or stacks >= self.AUGUSTA_BUFF_STACK_TARGET:
-                # the 2nd lib is an AERIAL recast: grounded, it won't come out. Get
-                # airborne first -- the skill launches her but is usually on CD by
-                # here (spent above), so fall back to a jump (no CD) -- then cast.
-                if not self.flying():
-                    if not self.click_resonance()[0]:  # skill launch if available...
-                        self.task.jump(after_sleep=0.1)  # ...else jump (no cooldown)
-                    self.task.wait_until(self.flying, time_out=1.5)
-                self.perform_majesty()           # 2nd lib (aerial recast)
-            else:
+            if 1 <= stacks < self.AUGUSTA_BUFF_STACK_TARGET:
+                # 1..8: do NOT skip -- keep attacking to build the buff up to the
+                # target, THEN cast. Bounded so a stuck/unreadable badge can't stall
+                # the rotation forever.
                 self.logger.info(
-                    f'Augusta burst: {stacks} < {self.AUGUSTA_BUFF_STACK_TARGET} stacks, '
-                    f'skipping 2nd lib (continue rotation)')
+                    f'Augusta burst: {stacks} stacks, building to '
+                    f'{self.AUGUSTA_BUFF_STACK_TARGET} before the 2nd lib')
+                self.task.wait_until(
+                    lambda: self.buff_stacks() >= self.AUGUSTA_BUFF_STACK_TARGET,
+                    post_action=self._build_buff_stack, time_out=5)
+            # 0 (OCR miss), >= target, or just built up -> cast. The 2nd lib is an
+            # AERIAL recast: get airborne first -- the skill launches her but is
+            # usually on CD by here (spent above), so fall back to a jump (no CD).
+            if not self.flying():
+                if not self.click_resonance()[0]:  # skill launch if available...
+                    self.task.jump(after_sleep=0.1)  # ...else jump (no cooldown)
+                self.task.wait_until(self.flying, time_out=1.5)
+            self.perform_majesty()               # 2nd lib (aerial recast)
         if with_basics:
             basic_attacks(self, 3)               # ba123
             heavy(self)                          # ha
