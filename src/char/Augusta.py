@@ -88,9 +88,12 @@ class Augusta(BaseChar):
         # skip when we CONFIDENTLY read a below-target count (1..target-1).
         if stacks == 0 or stacks >= self.AUGUSTA_BUFF_STACK_TARGET:
             # the 2nd lib is an AERIAL recast: grounded, the recast won't come out.
-            # Launch with her skill, wait until airborne, then cast from the air.
+            # Get airborne first. The skill launches her, but it's usually on CD by
+            # here (the burst spent it above), so fall back to a jump -- no CD, and
+            # it reliably puts her in the air -- then cast from the air.
             if not self.flying():
-                self.click_resonance()           # skill -> launches her airborne
+                if not self.click_resonance()[0]:  # skill launch if available...
+                    self.task.jump(after_sleep=0.1)  # ...else jump (no cooldown)
                 self.task.wait_until(self.flying, time_out=1.5)
             self.perform_majesty()               # 2nd lib (aerial recast)
         else:
