@@ -18,7 +18,7 @@ class Augusta(BaseChar):
     # >= TARGET before casting. Badge digit box in 3840x2160 ref px (pinned from an
     # in-game hover at normalized (0.501, 0.840)); widened left so "10" fits.
     AUGUSTA_MAJESTY_BOX = (1886, 1789, 1950, 1839)
-    AUGUSTA_MAJESTY_TARGET = 9
+    AUGUSTA_MAJESTY_TARGET = 10
 
     def do_perform(self):
         from src.combat.VariableRotation import get_active_rotation
@@ -96,13 +96,41 @@ class Augusta(BaseChar):
         return stacks
 
     def _build_majesty(self):
-        """One action to build more Majesty while holding for max stacks: the
-        forte heavy / prowess when up, else a basic attack."""
+        """One action to push Majesty toward max while holding for max stacks.
+
+        The Enhanced Resonance Skill (griffin) is Augusta's main Majesty builder,
+        so prefer it when it is off cooldown; then the forte/prowess heavy, else a
+        basic attack. (A plain basic alone barely moves the badge, which is why
+        she stalled short of the target.)"""
+        if self.resonance_available():
+            self.click_resonance()   # griffin / enhanced skill -> Majesty
+            return
         if self.is_forte_full() and self.heavy_click_forte(self.is_forte_full):
             return
         if self.check_prowess() and self.perform_prowess():
             return
         self.click()
+
+    def _build_and_cast_majesty(self):
+        """Build Majesty to >= TARGET (attacking to build while we wait), then
+        cast the 2nd liberation once its icon (check_majesty) is lit.
+
+        Shared by the scripted burst AND the reactive default so Augusta reaches
+        MAX stacks in both phases. After the 1st rotation the strict rotation
+        turns off and the reactive engine drives her; without this it fired the
+        2nd lib the instant the icon lit (~7 stacks) instead of at max, so she
+        never reached 10. Bounded so a stuck read cannot stall. Returns True if
+        the 2nd lib was cast."""
+        if self.majesty_stacks() < self.AUGUSTA_MAJESTY_TARGET:
+            self.logger.info(f'Augusta: building Majesty to {self.AUGUSTA_MAJESTY_TARGET} '
+                             f'before the 2nd lib')
+            self.task.wait_until(
+                lambda: self.majesty_stacks() >= self.AUGUSTA_MAJESTY_TARGET,
+                post_action=self._build_majesty, time_out=4)
+        if self.task.wait_until(self.check_majesty, time_out=1.5):
+            return self.perform_majesty()
+        self.logger.info('Augusta: lib2 (majesty) icon not lit, skipping 2nd lib')
+        return False
 
     def _augusta_burst(self, with_basics):
         # Augusta's kit (per the reference + guide): Resonance Skill -> 1st Resonance
@@ -127,19 +155,7 @@ class Augusta(BaseChar):
         # 2nd Resonance Liberation ("majesty"): the lib2 icon lights early (~7
         # Majesty), but the empowered hit is strongest at max -- so HOLD until the
         # Majesty badge reads >= TARGET (keep attacking to build it), then cast.
-        # Bounded so a stuck read can't stall.
-        if self.majesty_stacks() < self.AUGUSTA_MAJESTY_TARGET:
-            self.logger.info(
-                f'Augusta burst: building Majesty to {self.AUGUSTA_MAJESTY_TARGET} '
-                f'before the 2nd lib')
-            self.task.wait_until(
-                lambda: self.majesty_stacks() >= self.AUGUSTA_MAJESTY_TARGET,
-                post_action=self._build_majesty, time_out=4)
-        # cast only when the lib2 icon is lit (check_majesty), per the reference.
-        if self.task.wait_until(self.check_majesty, time_out=1.5):
-            self.perform_majesty()               # 2nd lib
-        else:
-            self.logger.info('Augusta burst: lib2 (majesty) icon not lit, skipping 2nd lib')
+        self._build_and_cast_majesty()           # 2nd lib at max stacks
         self._heavy_or_prowess()                 # ha
         if with_basics:
             # forte_check: these basics are trailing filler AFTER the 2nd lib, so
@@ -162,8 +178,9 @@ class Augusta(BaseChar):
         while timeout():
             self.cycle_start()
             if self.check_majesty():
-                self.logger.debug('Augusta performs majesty')
-                if self.perform_majesty():
+                # build to max stacks before casting -- see _build_and_cast_majesty
+                self.logger.debug('Augusta majesty icon lit; building to target')
+                if self._build_and_cast_majesty():
                     self.send_echo_key()
                     return self.switch_next_char()
             if self.flying():
@@ -185,7 +202,7 @@ class Augusta(BaseChar):
                 else:
                     if self.check_majesty():
                         self.wait_down()
-                        if self.perform_majesty():
+                        if self._build_and_cast_majesty():
                             self.send_echo_key()
                         return self.switch_next_char()
             if self.liberation_available():
