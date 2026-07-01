@@ -7,6 +7,7 @@ covered here; this protects the *ordering* contract that makes the rotation
 strict.
 """
 import unittest
+from unittest.mock import patch
 
 from src.combat.StrictRotation import (
     StrictRotation, BEATS, LOOP_START, TEAM, MUST, NO, NORMAL, get_strict_rotation,
@@ -23,6 +24,14 @@ def make_char(cls_name):
     obj.sleep = lambda *a, **k: None
     obj.flying = lambda: False
     obj.wait_down = lambda *a, **k: None
+    # defaults so build_concerto() (used by the outro top-off) can run in tests
+    obj.liberation_available = lambda *a, **k: False
+    obj.echo_available = lambda *a, **k: False
+    obj.resonance_available = lambda *a, **k: False
+    obj.click_liberation = lambda *a, **k: False
+    obj.click_echo = lambda *a, **k: None
+    obj.send_resonance_key = lambda *a, **k: None
+    obj.click = lambda *a, **k: None
     return obj
 
 
@@ -41,6 +50,9 @@ class FakeTask:
         return condition()
 
     def jump(self, *a, **k):
+        pass
+
+    def next_frame(self, *a, **k):
         pass
 
 
@@ -224,14 +236,14 @@ class TestStrictRotation(unittest.TestCase):
         sk = task.chars[2]
         events = []
         sk.perform_beat = lambda beat: events.append(('beat', beat.name))
-        sk.is_con_full = lambda: False  # not full -> bounded top-off attempted
-        sk.click_with_interval = lambda *a, **k: None
+        sk.is_con_full = lambda: False  # never reaches full
         sk.switch_next_char = lambda *a, **k: events.append(('switch', a, k))
         rot.index = 6  # sk_open2, outro=True
-        self.assertTrue(rot.run_current(sk))
+        # bound the top-off poll so the never-full case does not spin for 2.5s
+        with patch('src.combat.StrictRotation.OUTRO_TOPOFF_TIME_OUT', 0.02):
+            self.assertTrue(rot.run_current(sk))
         # con never reached full -> plain swap (free_intro=False), no faked outro
         self.assertEqual(events, [('beat', 'sk_open2'), ('switch', (), {'free_intro': False})])
-        self.assertEqual(len(task.wait_until_calls), 1)  # bounded top-off ran
         self.assertEqual(rot.index, 7)  # still advanced (strict sequence)
 
     def test_run_current_outro_beat_no_topoff_when_already_full(self):

@@ -324,9 +324,7 @@ class StrictRotation:
         # cannot stall the rotation; non-outro beats switch immediately.
         outro_ready = False
         if beat.outro:
-            outro_ready = char.is_con_full() or bool(self.task.wait_until(
-                char.is_con_full, post_action=lambda: build_concerto(char),
-                time_out=OUTRO_TOPOFF_TIME_OUT))
+            outro_ready = char.is_con_full() or topoff_concerto(char, OUTRO_TOPOFF_TIME_OUT)
             logger.info(f'{self.LABEL} outro beat {beat.name}: con_full={outro_ready}')
         self._handoff(char, beat, outro_ready)
         return True
@@ -503,3 +501,28 @@ def build_concerto(char):
         char.send_resonance_key(post_sleep=0.1)
         return
     char.click()
+
+
+def topoff_concerto(char, time_out, checks_per_action=3):
+    """Build concerto to full, re-reading the ring MORE FREQUENTLY than once per
+    build action, so the outro fires the instant the ring completes.
+
+    ``task.wait_until`` re-reads its condition only once per ``post_action`` (see
+    the framework loop mirrored in ``Zani.wait_until``), so a ring that tops off
+    partway through a long build action (an echo or skill animation) is not seen
+    until the NEXT action -- overshooting the full moment and, at worst, spending
+    another action's worth of time before the swap. Here every build action is
+    followed by ``checks_per_action`` quick ring re-reads (advancing a frame each),
+    so a completed ring is caught right after it lands. Bounded by ``time_out``;
+    returns True once the ring is full.
+    """
+    start = time.time()
+    while time.time() - start < time_out:
+        if char.is_con_full():
+            return True
+        build_concerto(char)                        # one high-yield build action
+        for _ in range(max(1, checks_per_action)):  # then poll the ring frequently
+            if char.is_con_full():
+                return True
+            char.task.next_frame()
+    return char.is_con_full()

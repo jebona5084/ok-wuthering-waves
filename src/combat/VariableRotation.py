@@ -45,7 +45,8 @@ except Exception:  # pragma: no cover - exercised only when ``ok`` is unavailabl
 
 from src.combat.StrictRotation import (
     StrictRotation, OUTRO_TOPOFF_TIME_OUT,
-    build_concerto, try_spend_forte, get_strict_rotation, _combat_control_exceptions,
+    build_concerto, topoff_concerto, try_spend_forte, get_strict_rotation,
+    _combat_control_exceptions,
 )
 
 CONFIG_KEY = 'Augusta Iuno SK Variable Rotation'
@@ -175,9 +176,7 @@ class VariableRotation(StrictRotation):
                 break  # ring already full -> stop early so the outro fires now
             self._dwell_fill(char, beat.outro)
         if beat.outro:
-            return char.is_con_full() or bool(self.task.wait_until(
-                char.is_con_full, post_action=lambda: build_concerto(char),
-                time_out=OUTRO_TOPOFF_TIME_OUT))
+            return char.is_con_full() or topoff_concerto(char, OUTRO_TOPOFF_TIME_OUT)
         return False
 
     def _dwell_fill(self, char, outro):
@@ -248,8 +247,7 @@ def reactive_outro_topoff(char, kwargs, threshold=REACTIVE_TOPOFF_THRESHOLD,
     con = char.get_current_con()
     if threshold <= con < 1:
         if aggressive:
-            char.task.wait_until(char.is_con_full,
-                                 post_action=lambda: build_concerto(char), time_out=2.5)
+            topoff_concerto(char, 2.5)
         else:
             char.continues_normal_attack(0.8, until_con_full=True)
     if char.is_con_full():

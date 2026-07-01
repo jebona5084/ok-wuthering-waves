@@ -45,6 +45,9 @@ class FakeTask:
     def jump(self, *a, **k):
         pass
 
+    def next_frame(self, *a, **k):
+        pass
+
 
 class FakeChar:
     """Rich stand-in that records perform_beat / switch and supports the dwell
@@ -236,6 +239,7 @@ class _ToppedChar:
         self._con = con
         self._con_full = con_full
         self.attacks = []
+        self.built = False
 
     def get_current_con(self):
         return self._con
@@ -253,6 +257,31 @@ class _ToppedChar:
 
     def wait_down(self, *a, **k):
         pass
+
+    # build_concerto() deps for the aggressive (high-yield) top-off path: all the
+    # big sources are on cooldown here, so it falls to click(), which we treat as
+    # reaching full so topoff_concerto returns promptly.
+    def liberation_available(self, *a, **k):
+        return False
+
+    def echo_available(self, *a, **k):
+        return False
+
+    def resonance_available(self, *a, **k):
+        return False
+
+    def click_liberation(self, *a, **k):
+        return False
+
+    def click_echo(self, *a, **k):
+        pass
+
+    def send_resonance_key(self, *a, **k):
+        pass
+
+    def click(self, *a, **k):
+        self.built = True
+        self._con_full = True
 
 
 class TestReactiveOutroTopoff(unittest.TestCase):
@@ -297,15 +326,16 @@ class TestReactiveOutroTopoff(unittest.TestCase):
         self.assertEqual(kwargs, {})         # not full -> plain swap
 
     def test_aggressive_builds_concerto_instead_of_basics(self):
-        # aggressive=True uses the high-yield build_concerto wait, NOT plain basics
-        # (Iuno's concerto barely moves on basics). Lower threshold catches her
-        # earlier.
+        # aggressive=True uses the high-yield build_concerto top-off, NOT plain
+        # basics (Iuno's concerto barely moves on basics). Lower threshold catches
+        # her earlier.
         task = self._inactive_task()
         char = _ToppedChar(task, con=0.65, con_full=False)
         kwargs = {}
         reactive_outro_topoff(char, kwargs, threshold=0.6, aggressive=True)
-        self.assertEqual(char.attacks, [])                # did NOT use basics
-        self.assertEqual(len(task.wait_until_calls), 1)   # used the build_concerto wait
+        self.assertEqual(char.attacks, [])        # did NOT use basics
+        self.assertTrue(char.built)               # used build_concerto instead
+        self.assertEqual(kwargs, {'free_intro': True})  # reached full -> outro forced
 
     def test_aggressive_below_threshold_is_noop(self):
         task = self._inactive_task()
