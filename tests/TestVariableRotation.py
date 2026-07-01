@@ -42,6 +42,9 @@ class FakeTask:
     def click(self):
         self.clicks += 1
 
+    def jump(self, *a, **k):
+        pass
+
 
 class FakeChar:
     """Rich stand-in that records perform_beat / switch and supports the dwell
@@ -75,6 +78,12 @@ class FakeChar:
 
     def check_outro(self):
         return self._outro
+
+    def flying(self):
+        return False
+
+    def wait_down(self, *a, **k):
+        pass
 
     def heavy_click_forte(self, check):
         self._forte_full = False
@@ -238,6 +247,12 @@ class _ToppedChar:
         self.attacks.append((duration, kwargs))
         self._con = 1.0
         self._con_full = True
+
+    def flying(self):
+        return False
+
+    def wait_down(self, *a, **k):
+        pass
 
 
 class TestReactiveOutroTopoff(unittest.TestCase):

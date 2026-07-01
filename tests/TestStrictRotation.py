@@ -19,6 +19,10 @@ def make_char(cls_name):
     cls = type(cls_name, (object,), {})
     obj = cls()
     obj.name = cls_name
+    # defaults so the hand-off's quickswap-cancel / grounding can run in tests
+    obj.sleep = lambda *a, **k: None
+    obj.flying = lambda: False
+    obj.wait_down = lambda *a, **k: None
     return obj
 
 
@@ -28,10 +32,16 @@ class FakeTask:
         self.combat_start = combat_start
         self.char_config = {} if char_config is None else char_config
         self.wait_until_calls = []
+        for c in chars:
+            if c is not None:
+                c.task = self  # so safe_cancel(char) can reach char.task.jump
 
     def wait_until(self, condition, post_action=None, time_out=None):
         self.wait_until_calls.append(time_out)
         return condition()
+
+    def jump(self, *a, **k):
+        pass
 
 
 def team(*names):
@@ -277,6 +287,41 @@ class TestStrictRotation(unittest.TestCase):
         self.assertTrue(rot.run_current(aug))
         # non-outro -> plain swap, free_intro=False
         self.assertEqual(events, [('beat', 'aug_open'), ('switch', (), {'free_intro': False})])
+
+    def test_run_current_outro_grounds_flying_char_before_swap(self):
+        # An aerial char is landed (wait_down) BEFORE the outro swap so the outro
+        # buff lands, then swaps via the outro path.
+        task = FakeTask(target_team())
+        rot = StrictRotation(task)
+        rot.maybe_reset()
+        sk = task.chars[2]
+        events = []
+        sk.perform_beat = lambda beat: None
+        sk.is_con_full = lambda: True
+        sk.flying = lambda: True
+        sk.wait_down = lambda *a, **k: events.append('grounded')
+        sk.switch_next_char = lambda *a, **k: events.append(('switch', k.get('free_intro')))
+        rot.index = 6  # sk_open2, outro=True
+        self.assertTrue(rot.run_current(sk))
+        self.assertEqual(events, ['grounded', ('switch', True)])  # grounded THEN outro
+
+    def test_run_current_non_outro_jump_cancels_for_quickswap(self):
+        # Non-outro hand-off jump-cancels recovery (aggressive quickswap) before
+        # the swap; a grounded char is not wait_down'd.
+        task = FakeTask(target_team())
+        task.jumped = 0
+        task.jump = lambda *a, **k: setattr(task, 'jumped', task.jumped + 1)
+        rot = StrictRotation(task)
+        rot.maybe_reset()
+        aug = task.chars[0]
+        events = []
+        aug.perform_beat = lambda beat: None
+        aug.wait_down = lambda *a, **k: events.append('grounded')  # must NOT be called
+        aug.switch_next_char = lambda *a, **k: events.append('switch')
+        rot.index = 0  # aug_open, outro=False
+        self.assertTrue(rot.run_current(aug))
+        self.assertEqual(task.jumped, 1)      # jump-cancelled once before the swap
+        self.assertEqual(events, ['switch'])  # no grounding on a non-outro beat
 
     def test_run_current_resets_to_opener_on_first_call(self):
         # _last_combat_start starts unset, so the first run_current rewinds to

@@ -112,6 +112,11 @@ LOOP_START = 10
 # and a quick fill returns immediately; the bound only caps the worst case.
 OUTRO_TOPOFF_TIME_OUT = 2.5
 
+# Aggressive quickswap: jump-cancel the last action's recovery on NON-outro
+# hand-offs so the swap is immediate. Outro hand-offs never cancel -- they ground
+# the char instead so the outro buff lands. Set False to revert to plain swaps.
+AGGRESSIVE_QUICKSWAP = True
+
 
 class StrictRotation:
     """Tracks the current beat and enforces the scripted switch order.
@@ -334,6 +339,18 @@ class StrictRotation:
             outro_ready = True
             logger.info(f'{self.LABEL} outro beat {beat.name}: ring confirmed full at '
                         f'hand-off, forcing outro')
+        if outro_ready:
+            # Ground an aerial char before the outro: the engine swap loop never
+            # lands her, and an outro fired while airborne/mid-plunge can drop its
+            # buff. wait_down returns as soon as she is grounded, so a char already
+            # on the ground pays nothing.
+            if char.flying():
+                logger.info(f'{self.LABEL} grounding {char.name} before outro so its buff lands')
+                char.wait_down()
+        elif AGGRESSIVE_QUICKSWAP:
+            # Aggressive quickswap on non-outro beats: jump-cancel the last action's
+            # recovery so the swap is immediate instead of waiting out the animation.
+            safe_cancel(char)
         self.advance()
         # free_intro forces the outro path instead of letting switch_next_char
         # re-read the ring -- that second read can flicker to 0.99 and silently

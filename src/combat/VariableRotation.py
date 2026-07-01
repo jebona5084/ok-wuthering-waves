@@ -253,5 +253,9 @@ def reactive_outro_topoff(char, kwargs, threshold=REACTIVE_TOPOFF_THRESHOLD,
         else:
             char.continues_normal_attack(0.8, until_con_full=True)
     if char.is_con_full():
+        # Ground an aerial char before the outro so its buff lands (Iuno is
+        # jump-native); wait_down returns at once if she is already grounded.
+        if char.flying():
+            char.wait_down()
         kwargs['free_intro'] = True
     return kwargs
