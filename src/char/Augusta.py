@@ -1,4 +1,3 @@
-import re
 import time
 
 from src.char.BaseChar import BaseChar
@@ -11,22 +10,8 @@ switch_time = 3
 
 
 class Augusta(BaseChar):
-    # Augusta's stacking buff (green badge, bottom-CENTRE above the resource gems)
-    # maxes at 10; the 2nd lib (majesty recast) should only fire at >= TARGET
-    # stacks -- below that it wastes the empowered hit. Read by OCR over the badge;
-    # box is 3840x2160 reference px (auto-scaled). Nudge the box if the digit isn't
-    # being read (enable debug logging to see the value).
-    # Box on the digit at the badge's lower-right edge. (1935..) overshot into the
-    # empty space right of the badge; (1892.. full badge) caught the clock and OCR
-    # read it as "L". This sits between: the clock's lower-right where the number
-    # renders.
-    # Digit center pinned from an in-game hover readout: normalized (0.501, 0.840)
-    # => (1924, 1814) in 3840x2160. Widened left so the TWO-digit "10" fits (a tight
-    # single-digit box read [] at max stacks); still excludes the crescent icon.
-    AUGUSTA_BUFF_STACK_BOX = (1886, 1789, 1950, 1839)
-    AUGUSTA_BUFF_STACK_TARGET = 9
-    # Augusta's 2nd lib ("liberation 2", a hold) unlocks only after this many
-    # enhanced-skill casts.
+    # Griffin (Enhanced Resonance Skill) is a 3-hit combo; it builds Majesty energy
+    # which lights the 2nd-liberation icon (gated on check_majesty()).
     ENHANCED_SKILL_COUNT = 3
 
     def do_perform(self):
@@ -82,43 +67,33 @@ class Augusta(BaseChar):
         else:
             heavy(self)
 
-    def _build_buff_stack(self):
-        """One stack-building action for the build-to-target loop.
-
-        Plain basics barely move the buff; her forte heavy / prowess builds the
-        bulk of it, so spend that when it is up and otherwise fall back to a basic.
-        """
-        if self.is_forte_full() and self.heavy_click_forte(self.is_forte_full):
-            return
-        if self.check_prowess() and self.perform_prowess():
-            return
-        self.click()
-
     def _augusta_burst(self, with_basics):
+        # Augusta's kit (per the reference + guide): Resonance Skill -> 1st Resonance
+        # Liberation -> Griffin (Enhanced Resonance Skill, a 3-hit combo that builds
+        # Majesty energy) -> 2nd Resonance Liberation (Majesty-empowered) -> basics.
+        # The reference gates each lib on its ICON: lib 1 on liberation_available()
+        # (Augusta_lib1), lib 2 on check_majesty() (Augusta_lib2). Calling
+        # perform_majesty WITHOUT that gate is what caused 'not in animation' -- lib2
+        # was not lit yet. So follow the reference and gate on the icons.
         from src.combat.StrictRotation import heavy, basic_attacks
-        # The stacking buff comes from Iuno's FULL-CONCERTO outro into Augusta, so
-        # the badge only exists after that switch. Capture it here (has_intro is
-        # set by a full-concerto switch): only THEN do we run the buff-stack OCR /
-        # 2nd lib. Captured at entry because attacks below can clear the flag.
-        # got_iuno_outro (has_intro, set by the full-concerto outro) gates the whole
-        # buff/2nd-lib pipeline -- the stacking buff only exists after Iuno's outro.
-        # Captured at entry because the attacks below can clear the flag.
-        got_iuno_outro = self.has_intro
-        self._heavy_or_prowess()                 # ha
-        # The "griffin" IS Augusta's enhanced resonance skill -- NOT the liberation.
-        # Casting the enhanced skill summons a griffin each time; doing it x3 unlocks
-        # the 2nd lib ("liberation 2", a hold). Earlier we wrongly fired the
-        # LIBERATION for the griffin, which spent lib / put it on cooldown and then
-        # the 2nd lib failed 'not in animation'. So: enhanced skill (griffin) x3,
-        # then hold the liberation -- the lib is untouched and now unlocked. Use
-        # click_resonance so each enhanced cast is actually registered.
+        self._heavy_or_prowess()                 # ha (charged/heavy)
+        self.click_resonance()                   # resonance skill (plunge)
+        # 1st Resonance Liberation -- fire when its icon (Augusta_lib1) is lit.
+        if self.liberation_available():
+            self.task.wait_until(lambda: not self.liberation_available(),
+                                 post_action=self.send_liberation_key, time_out=2)
+            self.record_liberation_use()
+        # Griffin = Enhanced Resonance Skill (3 hits). Builds Majesty, which lights
+        # the 2nd-liberation icon (Augusta_lib2).
         for _ in range(self.ENHANCED_SKILL_COUNT):
-            self.click_resonance()               # enhanced skill = griffin (x3 -> unlocks lib 2)
-        self.sleep(0.3)                          # let the 3rd skill's animation finish
-        if got_iuno_outro:
-            # 2nd lib is a HOLD -- give it a longer hold window than the 0.6s
-            # default so the empowered liberation actually triggers.
-            self.perform_majesty(time_out=1.8)   # 2nd lib (hold), now unlocked
+            self.click_resonance()               # griffin hit (x3)
+        # 2nd Resonance Liberation ("majesty") -- ONLY when its icon (Augusta_lib2)
+        # is lit: check_majesty(), exactly as the reference gates it. Give the icon a
+        # brief moment to light after the griffin.
+        if self.task.wait_until(self.check_majesty, time_out=1.5):
+            self.perform_majesty()               # 2nd lib
+        else:
+            self.logger.info('Augusta burst: lib2 (majesty) icon not lit, skipping 2nd lib')
         self._heavy_or_prowess()                 # ha
         if with_basics:
             basic_attacks(self, 3)               # ba123
@@ -210,28 +185,6 @@ class Augusta(BaseChar):
 
     def check_majesty(self):
         return self.current_liberation() > 0 and bool(self.task.find_one('Augusta_lib2', threshold=0.5))
-
-    def buff_stacks(self):
-        """OCR Augusta's stacking-buff count badge (0 if it can't be read).
-
-        The count is a white digit on the green clock badge, so isolate white
-        text first: that blacks out the clock symbol and green fill and leaves
-        just the number, which reads far more reliably.
-        """
-        from src.task.BaseWWTask import isolate_white_text_to_black
-        box = self.task.box_of_screen_scaled(
-            3840, 2160, *self.AUGUSTA_BUFF_STACK_BOX,
-            name='augusta_buff_stacks', hcenter=True)
-        self.task.draw_boxes(box.name, box)  # visible in debug overlay for tuning
-        stacks = 0
-        for t in self.task.ocr(box=box, match=re.compile(r'\d+'),
-                               frame_processor=isolate_white_text_to_black):
-            try:
-                stacks = max(stacks, int(re.sub(r'\D', '', t.name)))
-            except (ValueError, TypeError):
-                continue
-        self.logger.debug(f'Augusta buff_stacks = {stacks}')
-        return stacks
 
     def check_prowess(self):
         long_inner_box = 'target_enemy_long_inner'
