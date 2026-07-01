@@ -83,7 +83,10 @@ class Augusta(BaseChar):
         # building stacks and casts the recast on a later burst once she reaches
         # the target. Single-frame read, no blocking.
         stacks = self.buff_stacks()
-        if stacks >= self.AUGUSTA_BUFF_STACK_TARGET:
+        # stacks == 0 almost always means the badge could not be read (a genuine 0
+        # mid-burst is unlikely), so don't let an OCR miss block the recast -- only
+        # skip when we CONFIDENTLY read a below-target count (1..target-1).
+        if stacks == 0 or stacks >= self.AUGUSTA_BUFF_STACK_TARGET:
             # the 2nd lib is an AERIAL recast: grounded, the recast won't come out.
             # Launch with her skill, wait until airborne, then cast from the air.
             if not self.flying():
