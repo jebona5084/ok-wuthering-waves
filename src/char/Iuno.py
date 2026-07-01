@@ -111,26 +111,51 @@ class Iuno(BaseChar):
         self.logger.info(f'Iuno burst skills: cast1={bool(cast1[0])} cast2=forced')
         basic_attacks(self, 1)                            # ba
         # ha: Iuno's special heavy (the extra-action prompt) applies a buff that
-        # transfers on the outro. Give the prompt a brief moment to appear after
-        # the basics build forte, then fire it -- and SETTLE afterwards so the buff
-        # registers before run_current's outro swap cancels the recovery. Without
-        # the settle the swap clips the special heavy and its buff is lost.
-        # The prompt does not appear the instant the basics end -- forte has to
-        # build first -- and a single 0.6s look almost always missed it (0 hits
-        # across every log). So poll longer AND keep attacking while we wait
-        # (post_action=self.click builds the forte that lights the prompt),
-        # mirroring how do_everything catches it inside its attack loop.
-        special = self.task.wait_until(
-            lambda: self.task.find_feature("iuno_heavy", box="box_extra_action", threshold=0.55),
-            post_action=self.click, time_out=2.0)
-        if special:
-            self.heavy_attack()                          # special heavy -> buff
-            self.last_heavy = time.time()
-            self.sleep(0.35)
-            self.logger.info('Iuno burst: special heavy fired')
+        # transfers on the outro. It is a 20s-cooldown move, so only chase it when
+        # it is actually off cooldown; otherwise a plain heavy. See
+        # _fire_special_heavy for why a bare "look and click" kept missing it.
+        if self.time_elapsed_accounting_for_freeze(self.last_heavy) > 20:
+            if not self._fire_special_heavy():
+                heavy(self)                              # never lit -> plain heavy
         else:
-            self.logger.info('Iuno burst: special heavy not available, generic heavy')
+            self.logger.info('Iuno burst: special heavy on cooldown, generic heavy')
             heavy(self)
+
+    def _fire_special_heavy(self, time_out=3.0):
+        """Build toward and fire Iuno's special heavy (the ``iuno_heavy`` prompt in
+        box_extra_action), the buff that transfers on the outro. Returns True if it
+        fired.
+
+        Why the previous "poll + basic-attack" version kept skipping it: the
+        extra-action slot is SHARED with Iuno's aerial jump prompt (``iuno_jump``),
+        and the special heavy only lights after she is airborne. Clicking basics
+        never got her off the ground, so the heavy prompt never appeared. This
+        mirrors do_everything's proven loop instead -- consume the jump prompt to
+        get aerial, alternate skill/basic to build, and poll the heavy prompt the
+        whole time -- then SETTLE after firing so the buff registers before
+        run_current's outro swap cancels the recovery."""
+        start = time.time()
+        last_action = "click"
+        while self.time_elapsed_accounting_for_freeze(start) < time_out:
+            if self.task.find_feature("iuno_heavy", box="box_extra_action", threshold=0.55):
+                self.heavy_attack()                      # special heavy -> buff
+                self.last_heavy = time.time()
+                self.sleep(0.35)
+                self.logger.info('Iuno burst: special heavy fired')
+                return True
+            if self.task.find_feature("iuno_jump", box="box_extra_action", threshold=0.6):
+                # get airborne first -- that is what lights the heavy prompt
+                self.task.jump(after_sleep=0.1)
+                continue
+            if last_action == "click":
+                last_action = "resonance"
+                self.send_resonance_key()
+            else:
+                last_action = "click"
+                self.click()
+            self.sleep(0.05)
+        self.logger.info('Iuno burst: special heavy never lit after building')
+        return False
 
     def do_everything(self, time_out=1.5, force_complete=False):
         if self.has_intro:
