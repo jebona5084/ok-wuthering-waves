@@ -151,6 +151,12 @@ class Iuno(BaseChar):
                 heavy_success = True
             if heavy_success:
                 self.last_heavy = time.time()
+                # Settle so the special-heavy BUFF registers before the caller
+                # acts on it. do_everything otherwise returns with only a 0.05s
+                # tail, and the burst's outro top-off / grounding / swap (or the
+                # reactive switch) then cancel the heavy before its buff lands --
+                # which is why the heavy "kept getting cancelled".
+                self.sleep(0.35)
                 if not c6_performed and self.is_c6():
                     c6_performed = True
                     start = time.time()
