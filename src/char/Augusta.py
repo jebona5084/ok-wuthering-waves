@@ -105,29 +105,17 @@ class Augusta(BaseChar):
         # Captured at entry because the attacks below can clear the flag.
         got_iuno_outro = self.has_intro
         self._heavy_or_prowess()                 # ha
-        # Griffin liberation. Her summon does NOT take her out of the team view, so
-        # confirm the cast by the lib ENERGY draining (icon no longer available)
-        # rather than the not-in-team signal (which always false-reports 'no
-        # effect'). On cooldown the energy never drains -> griffin stays False.
-        griffin = False
-        if self.liberation_available():
-            griffin = bool(self.task.wait_until(
-                lambda: not self.liberation_available(),
-                post_action=self.send_liberation_key, time_out=1.0))
-            if griffin:
-                self.record_liberation_use()
-        # 2nd lib ("liberation 2", a HOLD) unlocks ONLY after 3 ENHANCED-SKILL casts
-        # -- that is why perform_majesty kept failing 'not in animation' (it was
-        # never unlocked). So cast the enhanced skill x3 first (these also build her
-        # stacking buff toward ~9-10), THEN hold the lib. Deterministic 3 casts is
-        # the real unlock, so we no longer depend on the flaky buff-badge OCR.
+        # The "griffin" IS Augusta's enhanced resonance skill -- NOT the liberation.
+        # Casting the enhanced skill summons a griffin each time; doing it x3 unlocks
+        # the 2nd lib ("liberation 2", a hold). Earlier we wrongly fired the
+        # LIBERATION for the griffin, which spent lib / put it on cooldown and then
+        # the 2nd lib failed 'not in animation'. So: enhanced skill (griffin) x3,
+        # then hold the liberation -- the lib is untouched and now unlocked. Use
+        # click_resonance so each enhanced cast is actually registered.
         for _ in range(self.ENHANCED_SKILL_COUNT):
-            # one discrete enhanced-skill cast each (direct key send -- click_resonance
-            # loops while the skill is available and would over-fire an enhanced,
-            # no-cooldown skill). post_sleep lets each cast resolve.
-            self.send_resonance_key(post_sleep=0.3)   # enhanced skill (x3 -> unlocks lib 2)
+            self.click_resonance()               # enhanced skill = griffin (x3 -> unlocks lib 2)
         if got_iuno_outro:
-            self.perform_majesty()               # 2nd lib (hold)
+            self.perform_majesty()               # 2nd lib (hold), now unlocked
         self._heavy_or_prowess()                 # ha
         if with_basics:
             basic_attacks(self, 3)               # ba123
