@@ -1,8 +1,9 @@
+import re
 import time
 
 from src.char.BaseChar import BaseChar
 
-""" 
+"""
     几个长派生帧动作的切人时间阈值,改小可以减少站场时间
     初始为 3
 """
@@ -10,9 +11,14 @@ switch_time = 3
 
 
 class Augusta(BaseChar):
-    # Griffin (Enhanced Resonance Skill) is a 3-hit combo; it builds Majesty energy
-    # which lights the 2nd-liberation icon (gated on check_majesty()).
+    # Griffin (Enhanced Resonance Skill) is a 3-hit combo; it builds Majesty energy.
     ENHANCED_SKILL_COUNT = 3
+    # The 2nd liberation icon (check_majesty) lights early (~7 Majesty), but the
+    # empowered hit is strongest at max -- so hold until the Majesty badge reads
+    # >= TARGET before casting. Badge digit box in 3840x2160 ref px (pinned from an
+    # in-game hover at normalized (0.501, 0.840)); widened left so "10" fits.
+    AUGUSTA_MAJESTY_BOX = (1886, 1789, 1950, 1839)
+    AUGUSTA_MAJESTY_TARGET = 9
 
     def do_perform(self):
         from src.combat.StrictRotation import get_strict_rotation
@@ -67,6 +73,36 @@ class Augusta(BaseChar):
         else:
             heavy(self)
 
+    def majesty_stacks(self):
+        """OCR the Majesty badge count (0 if no digit / can't be read).
+
+        The digit is white on the badge, so isolate white text first (blacks out
+        the icon/fill and leaves the number). At the lowest the badge shows no
+        digit -> reads 0.
+        """
+        from src.task.BaseWWTask import isolate_white_text_to_black
+        box = self.task.box_of_screen_scaled(
+            3840, 2160, *self.AUGUSTA_MAJESTY_BOX, name='augusta_majesty', hcenter=True)
+        self.task.draw_boxes(box.name, box)
+        stacks = 0
+        for t in self.task.ocr(box=box, match=re.compile(r'\d+'),
+                               frame_processor=isolate_white_text_to_black):
+            try:
+                stacks = max(stacks, int(re.sub(r'\D', '', t.name)))
+            except (ValueError, TypeError):
+                continue
+        self.logger.debug(f'Augusta majesty_stacks = {stacks}')
+        return stacks
+
+    def _build_majesty(self):
+        """One action to build more Majesty while holding for max stacks: the
+        forte heavy / prowess when up, else a basic attack."""
+        if self.is_forte_full() and self.heavy_click_forte(self.is_forte_full):
+            return
+        if self.check_prowess() and self.perform_prowess():
+            return
+        self.click()
+
     def _augusta_burst(self, with_basics):
         # Augusta's kit (per the reference + guide): Resonance Skill -> 1st Resonance
         # Liberation -> Griffin (Enhanced Resonance Skill, a 3-hit combo that builds
@@ -87,9 +123,18 @@ class Augusta(BaseChar):
         # the 2nd-liberation icon (Augusta_lib2).
         for _ in range(self.ENHANCED_SKILL_COUNT):
             self.click_resonance()               # griffin hit (x3)
-        # 2nd Resonance Liberation ("majesty") -- ONLY when its icon (Augusta_lib2)
-        # is lit: check_majesty(), exactly as the reference gates it. Give the icon a
-        # brief moment to light after the griffin.
+        # 2nd Resonance Liberation ("majesty"): the lib2 icon lights early (~7
+        # Majesty), but the empowered hit is strongest at max -- so HOLD until the
+        # Majesty badge reads >= TARGET (keep attacking to build it), then cast.
+        # Bounded so a stuck read can't stall.
+        if self.majesty_stacks() < self.AUGUSTA_MAJESTY_TARGET:
+            self.logger.info(
+                f'Augusta burst: building Majesty to {self.AUGUSTA_MAJESTY_TARGET} '
+                f'before the 2nd lib')
+            self.task.wait_until(
+                lambda: self.majesty_stacks() >= self.AUGUSTA_MAJESTY_TARGET,
+                post_action=self._build_majesty, time_out=4)
+        # cast only when the lib2 icon is lit (check_majesty), per the reference.
         if self.task.wait_until(self.check_majesty, time_out=1.5):
             self.perform_majesty()               # 2nd lib
         else:
