@@ -186,12 +186,19 @@ class Augusta(BaseChar):
         return self.current_liberation() > 0 and bool(self.task.find_one('Augusta_lib2', threshold=0.5))
 
     def buff_stacks(self):
-        """OCR Augusta's stacking-buff count badge (0 if it can't be read)."""
+        """OCR Augusta's stacking-buff count badge (0 if it can't be read).
+
+        The count is a white digit on the green clock badge, so isolate white
+        text first: that blacks out the clock symbol and green fill and leaves
+        just the number, which reads far more reliably.
+        """
+        from src.task.BaseWWTask import isolate_white_text_to_black
         box = self.task.box_of_screen_scaled(
             3840, 2160, *self.AUGUSTA_BUFF_STACK_BOX,
             name='augusta_buff_stacks', hcenter=True)
         stacks = 0
-        for t in self.task.ocr(box=box, match=re.compile(r'\d+')):
+        for t in self.task.ocr(box=box, match=re.compile(r'\d+'),
+                               frame_processor=isolate_white_text_to_black):
             try:
                 stacks = max(stacks, int(re.sub(r'\D', '', t.name)))
             except (ValueError, TypeError):
