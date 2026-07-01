@@ -70,11 +70,15 @@ char_config_option = ConfigOption('Character Config', {
     'Chisa DPS': False,
     'Augusta Iuno SK Strict Rotation': True,
     'Augusta Iuno SK Variable Rotation': False,
+    'Augusta Iuno SK Aggressive Cancel': True,
 }, description='Character Config', config_description={
     'Augusta Iuno SK Strict Rotation': 'Fixed quickswap rotation for the Augusta/Iuno/ShoreKeeper team',
     'Augusta Iuno SK Variable Rotation': 'Same rotation but characters can linger on field for '
                                          'condition-based windows (e.g. Augusta holds ~14s on an Iuno '
                                          'intro). Overrides the strict rotation when on.',
+    'Augusta Iuno SK Aggressive Cancel': 'Jump-cancel the last action before a non-outro swap so swaps '
+                                         'are immediate. Turn off for plain swaps. Outro swaps are never '
+                                         'cancelled (the char is grounded so the buff lands).',
 }, show_at_tab=True, icon=FluentIcon.PEOPLE)
 
 monthly_card_config_option = ConfigOption('Monthly Card Config', {

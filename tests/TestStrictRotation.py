@@ -323,6 +323,22 @@ class TestStrictRotation(unittest.TestCase):
         self.assertEqual(task.jumped, 1)      # jump-cancelled once before the swap
         self.assertEqual(events, ['switch'])  # no grounding on a non-outro beat
 
+    def test_aggressive_cancel_config_off_disables_quickswap_cancel(self):
+        task = FakeTask(target_team(),
+                        char_config={'Augusta Iuno SK Aggressive Cancel': False})
+        task.jumped = 0
+        task.jump = lambda *a, **k: setattr(task, 'jumped', task.jumped + 1)
+        rot = StrictRotation(task)
+        rot.maybe_reset()
+        aug = task.chars[0]
+        events = []
+        aug.perform_beat = lambda beat: None
+        aug.switch_next_char = lambda *a, **k: events.append('switch')
+        rot.index = 0  # non-outro
+        self.assertTrue(rot.run_current(aug))
+        self.assertEqual(task.jumped, 0)      # toggle off -> plain swap, no cancel
+        self.assertEqual(events, ['switch'])
+
     def test_run_current_resets_to_opener_on_first_call(self):
         # _last_combat_start starts unset, so the first run_current rewinds to
         # the opener even if index was nudged beforehand.

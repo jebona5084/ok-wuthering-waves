@@ -112,10 +112,25 @@ LOOP_START = 10
 # and a quick fill returns immediately; the bound only caps the worst case.
 OUTRO_TOPOFF_TIME_OUT = 2.5
 
-# Aggressive quickswap: jump-cancel the last action's recovery on NON-outro
+# Aggressive animation cancel: jump-cancel the last action's recovery on NON-outro
 # hand-offs so the swap is immediate. Outro hand-offs never cancel -- they ground
-# the char instead so the outro buff lands. Set False to revert to plain swaps.
-AGGRESSIVE_QUICKSWAP = True
+# the char instead so the outro buff lands. User-toggleable via the Character
+# Config tab; this is the default when the toggle is absent. (Scoped to the
+# leaving char at a swap on purpose -- cancelling around a character's own skills
+# would put an aerial char like Iuno airborne and drop her skill buffs.)
+AGGRESSIVE_CANCEL_CONFIG_KEY = 'Augusta Iuno SK Aggressive Cancel'
+AGGRESSIVE_CANCEL_DEFAULT = True
+
+
+def aggressive_cancel_enabled(task):
+    """Whether aggressive animation-cancel is enabled (config toggle, default on)."""
+    char_config = getattr(task, 'char_config', None)
+    if char_config is None:
+        return AGGRESSIVE_CANCEL_DEFAULT
+    try:
+        return bool(char_config.get(AGGRESSIVE_CANCEL_CONFIG_KEY, AGGRESSIVE_CANCEL_DEFAULT))
+    except Exception:
+        return AGGRESSIVE_CANCEL_DEFAULT
 
 
 class StrictRotation:
@@ -347,7 +362,7 @@ class StrictRotation:
             if char.flying():
                 logger.info(f'{self.LABEL} grounding {char.name} before outro so its buff lands')
                 char.wait_down()
-        elif AGGRESSIVE_QUICKSWAP:
+        elif aggressive_cancel_enabled(self.task):
             # Aggressive quickswap on non-outro beats: jump-cancel the last action's
             # recovery so the swap is immediate instead of waiting out the animation.
             safe_cancel(char)
