@@ -97,10 +97,13 @@ class Augusta(BaseChar):
         got_iuno_outro = self.has_intro
         self._heavy_or_prowess()                 # ha
         self.click_liberation()                  # lib -> summons griffin
-        # Build the buff to target BEFORE the launch, while grounded. Only when she
-        # entered via Iuno's full-concerto outro (else there is no buff to stack).
-        # At 1..8 don't skip -- keep attacking up to the target; bounded so a stuck
-        # badge can't stall. 0 (OCR miss) and >=target fall straight through to cast.
+        self.click_resonance()                   # skill
+        self._heavy_or_prowess()                 # ha
+        # 2nd lib (majesty recast). It does NOT require Augusta to be airborne, so
+        # just cast it -- no skill/jump launch, no fly wait. Only when she entered
+        # via Iuno's full-concerto outro (else there is no buff to stack). At 1..8
+        # stacks don't skip -- build up to the target first (bounded), then cast;
+        # 0 (OCR miss) and >=target cast directly.
         if got_iuno_outro:
             stacks = self.buff_stacks()
             if 1 <= stacks < self.AUGUSTA_BUFF_STACK_TARGET:
@@ -110,24 +113,11 @@ class Augusta(BaseChar):
                 self.task.wait_until(
                     lambda: self.buff_stacks() >= self.AUGUSTA_BUFF_STACK_TARGET,
                     post_action=self._build_buff_stack, time_out=5)
-        # skill: this is the rotation's single skill cast AND the launcher for the
-        # aerial 2nd lib. It MUST be cast fresh right here -- a plain jump does not
-        # put her in fly state (confirmed from the debug log), and if the skill were
-        # spent earlier it would be on CD with nothing to launch her. So: skill ->
-        # (airborne) 2nd lib -> ha, rather than skill -> ha -> 2nd lib (which landed
-        # her before the recast and made it fail).
-        launched = self.click_resonance()[0]     # skill -> airborne
-        if got_iuno_outro:
-            if launched:
-                self.task.wait_until(self.flying, time_out=1.5)
-            else:
-                self.logger.info('Augusta burst: skill launch not available, 2nd lib may whiff')
-            self.perform_majesty()               # 2nd lib (aerial recast)
+            self.perform_majesty()               # 2nd lib (majesty recast)
         else:
             self.logger.info(
                 'Augusta burst: no full-concerto Iuno outro this entry, '
                 'skipping 2nd lib (no buff to stack)')
-        self._heavy_or_prowess()                 # ha
         if with_basics:
             basic_attacks(self, 3)               # ba123
             heavy(self)                          # ha
