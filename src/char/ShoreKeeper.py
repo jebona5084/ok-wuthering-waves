@@ -46,6 +46,17 @@ class ShoreKeeper(BaseChar):
             self.continues_right_click(0.05)
             self.sleep(0.05)
 
+    def _cast_liberation_now(self):
+        """Cast her Resonance Liberation the instant it is ready, so the team buff
+        it applies goes up immediately -- she was delaying it behind filler basics
+        / a 2.2s attack, so the buff was still down while the cast was available.
+        click_liberation no-ops when it is on cooldown, and the dodge cuts the
+        Stellarealm-deploy recovery. Returns True if it fired."""
+        if self.click_liberation():
+            self.dodge_cancel()
+            return True
+        return False
+
     def decide_teammate(self):
         from src.char.Augusta import Augusta
         if self.attribute > 0:
@@ -64,10 +75,11 @@ class ShoreKeeper(BaseChar):
     def _do_perform_default(self):
         if self.has_intro:
             self._intro_wait()
-        self.continues_normal_attack(2.2)
+        # Liberation FIRST when it is ready: its team buff should be up at once,
+        # not behind 2.2s of filler basics. Echo (instant, concerto) then lib.
         self.click_echo(time_out=0)
-        if self.click_liberation():
-            self.dodge_cancel()  # cut the Stellarealm-deploy recovery
+        self._cast_liberation_now()
+        self.continues_normal_attack(2.2)
         # Spend BOTH skill and forte every cycle rather than the forte only when
         # the skill failed: her enhanced heavy is a big concerto source, so
         # checking it every cycle (not just on a skill miss) cashes it in before
@@ -97,47 +109,40 @@ class ShoreKeeper(BaseChar):
         """
         from src.combat.StrictRotation import basic_attacks
         if beat.name == 'sk_open':
-            # 3. echo, ba123, lib, ba12, ha, skill
-            # Echo first: it is ShoreKeeper's main concerto source (her basic
-            # attacks generate almost none), so without it she never builds the
-            # concerto needed to outro and apply her outro buff. time_out=0 only
-            # fires when the echo is off cooldown, so it is safe to always call.
+            # 3. lib (immediately if ready), echo, ba12345, ha, skill
+            # Liberation up front so its team buff is up at once. Echo then feeds
+            # concerto (her basics generate almost none); time_out=0 only fires
+            # when the echo is off cooldown, so it is safe to always call.
+            self._cast_liberation_now()
             self.click_echo(time_out=0)
             # forte_check: spend her enhanced heavy the moment it charges during
             # the basics (it is a big concerto source) instead of letting it
             # overcap until the next scripted heavy.
-            basic_attacks(self, 3, forte_check=self.is_mouse_forte_full)
-            if self.click_liberation():
-                self.dodge_cancel()
-            basic_attacks(self, 2, forte_check=self.is_mouse_forte_full)
+            basic_attacks(self, 5, forte_check=self.is_mouse_forte_full)
             self.heavy_attack()
             self.click_resonance()
         elif beat.name == 'sk_open2':
-            # 7. echo, ba12345, ha, outro
+            # 7. lib (immediately if ready), echo, ba12345, ha, skill+forte, outro
+            # Liberation up front so its team buff is up at once; skill+forte are
+            # frame-checked (no-op on cooldown) and bank the rest of the concerto.
+            self._cast_liberation_now()
             self.click_echo(time_out=0)
             basic_attacks(self, 5, forte_check=self.is_mouse_forte_full)
             self.heavy_attack()
             self.task.jump(after_sleep=0.2)
-            # sk_open2 alone omitted lib+skill, so it entered the central top-off
-            # with the least concerto banked. Spend them here too (each is
-            # frame-checked and a no-op when on cooldown), mirroring sk_open.
-            if self.click_liberation():
-                self.dodge_cancel()
             self._spend_skill_and_forte()
             self.continues_normal_attack(1.6)
             self.heavy_attack()
         elif beat.name in ('sk_intro', 'sk_loop'):
-            # 10 / 16. super intro, build concerto, outro
+            # 10 / 16. super intro, lib (immediately), build concerto, outro
             if beat.intro:
                 self._intro_wait()
+            self._cast_liberation_now()
             self.click_echo(time_out=0)
-            if self.click_liberation():
-                self.dodge_cancel()
             self._spend_skill_and_forte()
         else:  # defensive: unknown beat
+            self._cast_liberation_now()
             self.click_echo(time_out=0)
-            if self.click_liberation():
-                self.dodge_cancel()
             self._spend_skill_and_forte()
 
     def _spend_skill_and_forte(self):
