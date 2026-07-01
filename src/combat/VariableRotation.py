@@ -1,37 +1,34 @@
 """Variable-window rotation for the Augusta / Iuno / ShoreKeeper team.
 
-This is a sibling of :mod:`src.combat.StrictRotation`. It reuses that module's
-beat sequence (``BEATS``) and the per-character ``perform_beat`` implementations
-verbatim -- the ORDERING and the scripted key sequences are identical -- and adds
-the one thing the strict rotation does not have: a per-beat *dwell window* that
-can be EXTENDED at run time by conditions.
+A thin subclass of :class:`src.combat.StrictRotation.StrictRotation`: it inherits
+that class's beat sequence, ordering, flicker debounce and stop-after-opener
+bookkeeping unchanged, and overrides only the hand-off. Where the strict rotation
+quickswaps off every beat immediately, this one gives each beat a *dwell window*
+that runtime conditions can EXTEND.
 
-The strict rotation is a pure quickswap: every beat fires its sequence and hands
-off immediately. That is ideal when every slot is a fixed hand-off, but sometimes
-a character should linger on field longer -- e.g. Augusta holding a sub-DPS intro
-from Iuno wants the full extended-buff window to dump damage, exactly like the
-reactive engine's::
+The strict rotation is a pure quickswap -- ideal when every slot is a fixed
+hand-off, but sometimes a character should linger on field longer. Augusta
+holding a sub-DPS intro from Iuno wants the full extended-buff window to dump
+damage, exactly like the reactive engine's::
 
     if self.has_sub_dps_intro and self.check_outro() in {'char_iuno'}:
         time_out = 14
 
-Here that idea is generalised. Each beat has a :class:`Window` -- a ``base`` dwell
+That idea is generalised here. Each beat has a :class:`Window` -- a ``base`` dwell
 (0 == quickswap, the default) plus a list of :class:`Extension` rules. At run time
-the window is ``max(base, *seconds of every rule whose predicate fires)``; the
-coordinator then holds the character on field for that long, doing productive
-filler (building concerto on outro beats, spending forte / basics otherwise),
-before switching. With every window left at 0 this module behaves exactly like
-the strict rotation.
+the window is ``max(base, seconds of every rule whose predicate fires)``; the
+coordinator holds the character on field for that long, doing productive filler
+(building concerto on outro beats, spending forte / basics otherwise), before
+switching. With every window at 0 it behaves exactly like the strict rotation.
 
-Opt-in: gated behind its own config key (default OFF). Enabling it swaps the team
-from the strict quickswap to this variable-window variant without touching the
-strict rotation; ``get_active_rotation`` picks whichever is configured. Everything
-degrades to the reactive engine the same way the strict rotation does.
+Opt-in via its own config toggle (default OFF). ``get_active_rotation`` returns
+this rotation when the toggle is on, else the strict rotation; the three
+character classes route ``do_perform`` / ``get_switch_priority`` through it, so
+the strict behaviour is unchanged unless the toggle is enabled.
 
-AI editing guide (same as StrictRotation): keep this module free of heavy imports
-so the pure ordering/window logic stays unit-testable without the game stack --
-talk to characters/task only through duck-typed attributes, and keep the window
-predicates side-effect free so ``compute_window`` can be tested with a fake char.
+AI editing guide: keep the window predicates SIDE-EFFECT FREE (``compute_window``
+may evaluate them more than once and is unit-tested with a fake char), and keep
+this module free of heavy imports so the pure logic stays testable.
 """
 
 import time
@@ -46,12 +43,8 @@ except Exception:  # pragma: no cover - exercised only when ``ok`` is unavailabl
 
     logger = logging.getLogger(__name__)
 
-# Reuse the strict rotation's ordering, tokens and shared action helpers so the
-# two variants cannot drift apart: this is the SAME rotation, plus windows. (If a
-# genuinely different beat sequence is ever wanted, redefine BEATS/LOOP_START
-# locally -- the coordinator below only depends on those two names.)
 from src.combat.StrictRotation import (
-    BEATS, LOOP_START, TEAM, MUST, NO, NORMAL, OUTRO_TOPOFF_TIME_OUT,
+    StrictRotation, OUTRO_TOPOFF_TIME_OUT,
     build_concerto, try_spend_forte, get_strict_rotation, _combat_control_exceptions,
 )
 
@@ -74,9 +67,9 @@ Extension = namedtuple('Extension', ['name', 'predicate', 'seconds'])
 
 def _holds_iuno_sub_dps_intro(char):
     """Augusta just came in on a sub-DPS (Iuno) intro -> hold the field for the
-    extended buff window instead of quickswapping. This mirrors the reactive
-    engine's ``time_out = 14`` branch verbatim; guarded so a char without these
-    hooks (or a transient read error) simply does not extend."""
+    extended buff window instead of quickswapping. Mirrors the reactive engine's
+    ``time_out = 14`` branch; guarded so a char without these hooks (or a
+    transient read error) simply does not extend."""
     try:
         return bool(getattr(char, 'has_sub_dps_intro', False)) and \
             char.check_outro() in {'char_iuno'}
@@ -120,120 +113,16 @@ def compute_window(beat, char):
     return seconds
 
 
-class VariableRotation:
+class VariableRotation(StrictRotation):
     """Strict ordering + per-beat extendable dwell windows.
 
-    A copy of :class:`src.combat.StrictRotation.StrictRotation`'s bookkeeping
-    (kept standalone so it can evolve independently), with the immediate hand-off
-    replaced by a windowed dwell. One instance is attached to the task
-    (``task._variable_rotation``) and lives for the whole combat.
+    Inherits all of :class:`StrictRotation`'s bookkeeping and overrides only the
+    driver to add the windowed dwell. Opt-in (``DEFAULT_ENABLED = False``).
     """
 
-    # Same semantics as the strict rotation: run the scripted rotation for the
-    # opener (the "1st rotation") then hand the sustained fight to the reactive
-    # engine. Reset per new combat.
-    STOP_AFTER_FIRST_ROTATION = True
-
-    # A combat-detection flicker (target lock dropping mid-fight) briefly changes
-    # task.combat_start; only treat a change as a genuinely NEW combat when there
-    # was a real gap since the last beat ran, else the rotation rewinds forever.
-    COMBAT_FLICKER_TOLERANCE = 20
-
-    def __init__(self, task):
-        self.task = task
-        self.index = 0
-        self._last_combat_start = None
-        self._last_inactive_state = None
-        self._last_seen = None
-        self._finished = False
-
-    # --- team / enablement -------------------------------------------------
-    def team_names(self):
-        chars = getattr(self.task, 'chars', None) or []
-        return {type(c).__name__ for c in chars if c is not None}
-
-    def team_matches(self):
-        return self.team_names() == set(TEAM)
-
-    def config_enabled(self):
-        """Opt-in: OFF unless the toggle is explicitly set. Without a config
-        object the strict rotation stays the default, so this returns False."""
-        char_config = getattr(self.task, 'char_config', None)
-        if char_config is None:
-            return False
-        try:
-            return bool(char_config.get(CONFIG_KEY, False))
-        except Exception:
-            return False
-
-    def is_active(self):
-        if self.STOP_AFTER_FIRST_ROTATION and self._finished:
-            return False
-        return self.config_enabled() and self.team_matches()
-
-    def _diagnose_inactive(self):
-        if self.STOP_AFTER_FIRST_ROTATION and self._finished:
-            return
-        names = self.team_names()
-        state = (self.config_enabled(), frozenset(names))
-        if state == self._last_inactive_state:
-            return
-        self._last_inactive_state = state
-        if names == set(TEAM) and not self.config_enabled():
-            logger.info(
-                f"VariableRotation inactive: config '{CONFIG_KEY}' is OFF "
-                f"(the strict rotation / reactive engine is used instead)")
-        elif names != set(TEAM):
-            logger.info(
-                f"VariableRotation inactive: on-field team {sorted(names)} != "
-                f"required {sorted(TEAM)}")
-
-    # --- beat bookkeeping --------------------------------------------------
-    def maybe_reset(self):
-        combat_start = getattr(self.task, 'combat_start', None)
-        if combat_start == self._last_combat_start:
-            return
-        self._last_combat_start = combat_start
-        brief = (self._last_seen is not None
-                 and time.time() - self._last_seen < self.COMBAT_FLICKER_TOLERANCE)
-        if brief:
-            logger.info('VariableRotation: brief combat re-entry, keeping position')
-        else:
-            self.index = 0
-            self._finished = False
-            logger.info('VariableRotation reset to opener for new combat')
-
-    def current_beat(self):
-        return BEATS[self.index]
-
-    def advance(self):
-        if self.STOP_AFTER_FIRST_ROTATION and self.index == LOOP_START - 1:
-            self._finished = True
-            logger.info('VariableRotation: 1st rotation (opener) complete -- '
-                        'turning off, reactive engine takes over')
-        self.index += 1
-        if self.index >= len(BEATS):
-            self.index = LOOP_START
-        return self.current_beat()
-
-    def resync(self, char_name):
-        for offset in range(len(BEATS)):
-            idx = self.index + offset
-            if idx >= len(BEATS):
-                idx = LOOP_START + ((idx - len(BEATS)) % (len(BEATS) - LOOP_START))
-            if BEATS[idx].char == char_name:
-                if idx != self.index:
-                    logger.warning(f'VariableRotation resync {self.index} -> {idx} '
-                                   f'for {char_name} (skipped {idx - self.index} beat(s))')
-                self.index = idx
-                return True
-        return False
-
-    # --- ordering ----------------------------------------------------------
-    def priority_for(self, char_name):
-        if not self.is_active():
-            return NORMAL
-        return MUST if self.current_beat().char == char_name else NO
+    LABEL = 'VariableRotation'
+    CONFIG_KEY = CONFIG_KEY
+    DEFAULT_ENABLED = False
 
     # --- driver ------------------------------------------------------------
     def run_current(self, char):
@@ -250,18 +139,18 @@ class VariableRotation:
         beat = self.current_beat()
         if beat.char != char.name:
             if not self.resync(char.name):
-                logger.info(f'VariableRotation cannot place {char.name}, falling back')
+                logger.info(f'{self.LABEL} cannot place {char.name}, falling back')
                 return False
             beat = self.current_beat()
         window = compute_window(beat, char)
-        logger.info(f'VariableRotation beat {self.index} {beat.name} ({char.name}) '
+        logger.info(f'{self.LABEL} beat {self.index} {beat.name} ({char.name}) '
                     f'intro={beat.intro} outro={beat.outro} window={window:.1f}s')
         try:
             char.perform_beat(beat)
         except _combat_control_exceptions():
             raise
         except Exception:
-            logger.exception(f'VariableRotation beat {beat.name} failed; advancing past it')
+            logger.exception(f'{self.LABEL} beat {beat.name} failed; advancing past it')
             self.advance()
             raise
         # Windowed dwell: hold the field for the (possibly extended) window doing

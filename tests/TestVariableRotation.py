@@ -131,11 +131,13 @@ class TestActiveRotationDispatch(unittest.TestCase):
 
     def test_returns_strict_when_variable_off(self):
         task = FakeTask(target_team())
-        self.assertIsInstance(get_active_rotation(task), StrictRotation)
+        # exact type: VariableRotation subclasses StrictRotation, so isinstance
+        # would not distinguish them -- the strict path must return the base.
+        self.assertIs(type(get_active_rotation(task)), StrictRotation)
 
     def test_returns_variable_when_on(self):
         task = FakeTask(target_team(), char_config=dict(ON))
-        self.assertIsInstance(get_active_rotation(task), VariableRotation)
+        self.assertIs(type(get_active_rotation(task)), VariableRotation)
 
     def test_variable_instance_is_cached(self):
         task = FakeTask(target_team())

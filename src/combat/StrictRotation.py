@@ -125,6 +125,13 @@ class StrictRotation:
     # engine. Reset per new combat so the opener runs again each fight.
     STOP_AFTER_FIRST_ROTATION = True
 
+    # Subclass hooks (see VariableRotation): the log label, the config toggle this
+    # rotation reads, and whether it is on when the toggle is absent. Kept as class
+    # attributes so the shared bookkeeping below needs no per-variant overrides.
+    LABEL = 'StrictRotation'
+    CONFIG_KEY = CONFIG_KEY
+    DEFAULT_ENABLED = True
+
     def __init__(self, task):
         self.task = task
         self.index = 0
@@ -144,11 +151,11 @@ class StrictRotation:
     def config_enabled(self):
         char_config = getattr(self.task, 'char_config', None)
         if char_config is None:
-            return True
+            return self.DEFAULT_ENABLED
         try:
-            return bool(char_config.get(CONFIG_KEY, True))
+            return bool(char_config.get(self.CONFIG_KEY, self.DEFAULT_ENABLED))
         except Exception:
-            return True
+            return self.DEFAULT_ENABLED
 
     def is_active(self):
         if self.STOP_AFTER_FIRST_ROTATION and self._finished:
@@ -176,12 +183,12 @@ class StrictRotation:
         self._last_inactive_state = state
         if names == set(TEAM):
             logger.warning(
-                f"StrictRotation INACTIVE for team {sorted(names)}: config "
-                f"'{CONFIG_KEY}' is OFF -- enable it in the Character Config tab to run "
+                f"{self.LABEL} INACTIVE for team {sorted(names)}: config "
+                f"'{self.CONFIG_KEY}' is OFF -- enable it in the Character Config tab to run "
                 f"the scripted rotation (otherwise the reactive engine is used)")
         else:
             logger.info(
-                f"StrictRotation inactive: on-field team {sorted(names)} != "
+                f"{self.LABEL} inactive: on-field team {sorted(names)} != "
                 f"required {sorted(TEAM)}")
 
     # --- beat bookkeeping --------------------------------------------------
@@ -202,11 +209,11 @@ class StrictRotation:
         brief = (self._last_seen is not None
                  and time.time() - self._last_seen < self.COMBAT_FLICKER_TOLERANCE)
         if brief:
-            logger.info('StrictRotation: brief combat re-entry, keeping rotation position')
+            logger.info(f'{self.LABEL}: brief combat re-entry, keeping rotation position')
         else:
             self.index = 0
             self._finished = False  # new combat -> run the opener (1st rotation) again
-            logger.info('StrictRotation reset to opener for new combat')
+            logger.info(f'{self.LABEL} reset to opener for new combat')
 
     def current_beat(self):
         return BEATS[self.index]
@@ -216,8 +223,8 @@ class StrictRotation:
         # the scripted rotation off and let the reactive engine sustain the fight.
         if self.STOP_AFTER_FIRST_ROTATION and self.index == LOOP_START - 1:
             self._finished = True
-            logger.info('StrictRotation: 1st rotation (opener) complete -- '
-                        'turning off strict rotation, reactive engine takes over')
+            logger.info(f'{self.LABEL}: 1st rotation (opener) complete -- '
+                        f'turning off, reactive engine takes over')
         self.index += 1
         if self.index >= len(BEATS):
             self.index = LOOP_START
@@ -239,7 +246,7 @@ class StrictRotation:
                 if idx != self.index:
                     # surfaced at WARNING: a skip means a switch was missed or
                     # combat started off-script, so beats were silently dropped.
-                    logger.warning(f'StrictRotation resync {self.index} -> {idx} for {char_name} '
+                    logger.warning(f'{self.LABEL} resync {self.index} -> {idx} for {char_name} '
                                    f'(skipped {idx - self.index} beat(s))')
                 self.index = idx
                 return True
@@ -275,10 +282,10 @@ class StrictRotation:
         beat = self.current_beat()
         if beat.char != char.name:
             if not self.resync(char.name):
-                logger.info(f'StrictRotation cannot place {char.name}, falling back')
+                logger.info(f'{self.LABEL} cannot place {char.name}, falling back')
                 return False
             beat = self.current_beat()
-        logger.info(f'StrictRotation beat {self.index} {beat.name} ({char.name}) '
+        logger.info(f'{self.LABEL} beat {self.index} {beat.name} ({char.name}) '
                     f'intro={beat.intro} outro={beat.outro}')
         try:
             char.perform_beat(beat)
@@ -287,7 +294,7 @@ class StrictRotation:
         except Exception:
             # An unexpected per-beat failure must not pin the rotation on the
             # same beat forever: advance past it, then re-raise so it is visible.
-            logger.exception(f'StrictRotation beat {beat.name} failed; advancing past it')
+            logger.exception(f'{self.LABEL} beat {beat.name} failed; advancing past it')
             self.advance()
             raise
         # Strict sequence: always advance to the next beat (never stay/redo). On
@@ -300,7 +307,7 @@ class StrictRotation:
             outro_ready = char.is_con_full() or bool(self.task.wait_until(
                 char.is_con_full, post_action=lambda: build_concerto(char),
                 time_out=OUTRO_TOPOFF_TIME_OUT))
-            logger.info(f'StrictRotation outro beat {beat.name}: con_full={outro_ready}')
+            logger.info(f'{self.LABEL} outro beat {beat.name}: con_full={outro_ready}')
         self.advance()
         # When concerto is confirmed full, force the outro path (free_intro=True)
         # instead of letting switch_next_char re-read the ring -- that second read
@@ -409,11 +416,12 @@ def heavy(char, cancel=False):
     hit has registered -- the biggest single time save in the rotation. Leave it
     False for the last heavy before an outro, where the swap cancels it anyway.
     """
-    if char.is_forte_full():
-        if char.heavy_click_forte(char.is_forte_full):
-            if cancel:
-                safe_cancel(char)
-            return
+    # heavy_click_forte no-ops (returns falsy) when the gauge is not charged, so
+    # call it directly instead of pre-reading is_forte_full a second time.
+    if char.heavy_click_forte(char.is_forte_full):
+        if cancel:
+            safe_cancel(char)
+        return
     char.heavy_attack()
     if cancel:
         safe_cancel(char)
