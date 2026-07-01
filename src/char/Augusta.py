@@ -122,7 +122,10 @@ class Augusta(BaseChar):
         # stacking buff toward ~9-10), THEN hold the lib. Deterministic 3 casts is
         # the real unlock, so we no longer depend on the flaky buff-badge OCR.
         for _ in range(self.ENHANCED_SKILL_COUNT):
-            self.click_resonance()               # enhanced skill (x3 -> unlocks lib 2)
+            # one discrete enhanced-skill cast each (direct key send -- click_resonance
+            # loops while the skill is available and would over-fire an enhanced,
+            # no-cooldown skill). post_sleep lets each cast resolve.
+            self.send_resonance_key(post_sleep=0.3)   # enhanced skill (x3 -> unlocks lib 2)
         if got_iuno_outro:
             self.perform_majesty()               # 2nd lib (hold)
         self._heavy_or_prowess()                 # ha
