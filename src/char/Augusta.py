@@ -1,3 +1,4 @@
+import re
 import time
 
 from src.char.BaseChar import BaseChar
@@ -10,6 +11,14 @@ switch_time = 3
 
 
 class Augusta(BaseChar):
+    # Augusta's stacking buff (green badge, bottom-CENTRE above the resource gems)
+    # maxes at 10; the 2nd lib (majesty recast) should only fire at >= TARGET
+    # stacks -- below that it wastes the empowered hit. Read by OCR over the badge;
+    # box is 3840x2160 reference px (auto-scaled). Nudge the box if the digit isn't
+    # being read (enable debug logging to see the value).
+    AUGUSTA_BUFF_STACK_BOX = (1780, 1755, 1945, 1845)
+    AUGUSTA_BUFF_STACK_TARGET = 9
+
     def do_perform(self):
         from src.combat.StrictRotation import get_strict_rotation
         if get_strict_rotation(self.task).run_current(self):
@@ -69,11 +78,17 @@ class Augusta(BaseChar):
         self.click_liberation()                  # lib -> summons griffin
         self.click_resonance()                   # skill
         self._heavy_or_prowess()                 # ha
-        # always attempt the 2nd lib (majesty recast) -- do NOT gate on
-        # check_majesty()/the lib2 icon, which read as unlit even when the recast
-        # is available and wrongly skipped it. perform_majesty no-ops safely (it
-        # checks the animation started and returns False) if it truly can't fire.
-        self.perform_majesty()                   # 2nd lib (majesty recast)
+        # 2nd lib only at >= TARGET buff stacks. Below that, DON'T cast it and
+        # DON'T wait/stall -- just skip it and continue the rotation; she keeps
+        # building stacks and casts the recast on a later burst once she reaches
+        # the target. Single-frame read, no blocking.
+        stacks = self.buff_stacks()
+        if stacks >= self.AUGUSTA_BUFF_STACK_TARGET:
+            self.perform_majesty()               # 2nd lib (majesty recast)
+        else:
+            self.logger.info(
+                f'Augusta burst: {stacks} < {self.AUGUSTA_BUFF_STACK_TARGET} stacks, '
+                f'skipping 2nd lib (continue rotation)')
         if with_basics:
             basic_attacks(self, 3)               # ba123
             heavy(self)                          # ha
@@ -164,6 +179,20 @@ class Augusta(BaseChar):
 
     def check_majesty(self):
         return self.current_liberation() > 0 and bool(self.task.find_one('Augusta_lib2', threshold=0.5))
+
+    def buff_stacks(self):
+        """OCR Augusta's stacking-buff count badge (0 if it can't be read)."""
+        box = self.task.box_of_screen_scaled(
+            3840, 2160, *self.AUGUSTA_BUFF_STACK_BOX,
+            name='augusta_buff_stacks', hcenter=True)
+        stacks = 0
+        for t in self.task.ocr(box=box, match=re.compile(r'\d+')):
+            try:
+                stacks = max(stacks, int(re.sub(r'\D', '', t.name)))
+            except (ValueError, TypeError):
+                continue
+        self.logger.debug(f'Augusta buff_stacks = {stacks}')
+        return stacks
 
     def check_prowess(self):
         long_inner_box = 'target_enemy_long_inner'
