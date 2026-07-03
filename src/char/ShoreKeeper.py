@@ -213,7 +213,6 @@ class ShoreKeeper(BaseChar):
     # before the heavy charged, and even a clean hold got its hit cancelled.
     FORTE_HOLD_MIN = 0.6       # keep the button down at least this long
     FORTE_CANCEL_DELAY = 0.5   # let the released hit register before cancelling
-    FORTE_FILL_TIME_OUT = 12.0  # cap on the sk_forte opener pre-fill beat
     # Suppress full reads this long after a spend: the blaze FADES over ~a
     # second after the held heavy, and re-reading that fade as 'full again'
     # chained back-to-back phantom holds (~3s each: 2s drain-wait + min hold +
@@ -314,19 +313,7 @@ class ShoreKeeper(BaseChar):
         """
         from src.combat.StrictRotation import basic_attacks, aggressive_cancel_enabled
         agg = aggressive_cancel_enabled(self.task)  # jump-cancel filler basics when on
-        if beat.name == 'sk_forte':
-            # 0. opener pre-fill (user: 'sk fills forte before doing current
-            # rotation'): plain basics until the Illation bar reads full, so
-            # she re-enters sk_open with a charged held heavy. Basics ONLY --
-            # lib/echo/skill stay reserved for their scripted beats, and no
-            # forte_check on purpose: the fill must not be spent on the spot.
-            # Bounded so a misread cannot stall the opener; exits the moment
-            # the bar reads full.
-            start = time.time()
-            while (not self.is_forte_full()
-                   and time.time() - start < self.FORTE_FILL_TIME_OUT):
-                basic_attacks(self, 1)
-        elif beat.name == 'sk_open':
+        if beat.name == 'sk_open':
             # 3. lib, SKILL (Chaos Theory), ba123, ha. Measured across logs
             # c5607282 and 3a0c1e77: the skill grants ~20 concerto instantly
             # and the REMAINDER TRICKLES IN OFF-FIELD (kit: cast-and-leave),

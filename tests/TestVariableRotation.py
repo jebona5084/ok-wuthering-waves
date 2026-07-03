@@ -253,26 +253,22 @@ class TestRunCurrentWindows(unittest.TestCase):
 
     def test_zero_window_quickswaps_like_strict(self):
         rot = self._rot()
-        rot._last_combat_start = rot.task.combat_start  # skip the new-combat rewind
-        rot.index = 1  # aug_open: not windowed -> 0
-        char = FakeChar('Augusta', rot.task)
+        char = FakeChar('Augusta', rot.task)  # aug_open: not windowed -> 0
         self.assertTrue(rot.run_current(char))
         self.assertEqual(char.beats, ['aug_open'])
         self.assertEqual(char.switches, [False])   # non-outro -> plain swap
-        self.assertEqual(rot.index, 2)             # advanced
+        self.assertEqual(rot.index, 1)             # advanced
 
     def test_outro_beat_forces_outro_when_con_full(self):
         rot = self._rot()
         rot._last_combat_start = rot.task.combat_start  # skip the new-combat rewind
-        rot.index = 7  # sk_open2: ShoreKeeper, outro=True, not windowed
+        rot.index = 6  # sk_open2: ShoreKeeper, outro=True, not windowed
         char = FakeChar('ShoreKeeper', rot.task, con_full=True)
         self.assertTrue(rot.run_current(char))
         self.assertEqual(char.switches, [True])    # free_intro outro
 
     def test_extended_window_dwells_before_switching(self):
         rot = self._rot()
-        rot._last_combat_start = rot.task.combat_start  # skip the new-combat rewind
-        rot.index = 1  # aug_open
         char = FakeChar('Augusta', rot.task)
         # give aug_open a tiny real window so the dwell runs but the test is fast
         with patch.dict(WINDOWS, {'aug_open': Window(0.05, [])}, clear=False):
