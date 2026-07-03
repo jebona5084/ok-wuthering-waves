@@ -134,12 +134,21 @@ CON_FULL_SIGNATURE_MATCH = 0.95
 # it, fall back to the raw (capped) reading so a chronic misclassification can
 # never freeze the value forever.
 CON_HOLD_MAX_AGE = 2.5
-# For elements with a glow band (con_glow_colors), a TRUE full ring blooms
-# pale: at least this fraction of sectors must be lit by the glow/bright
-# masks for a full-geometry ring to count as full. A closed ring carried by
-# the element mask alone is the DECOY overlay (renders in-range and static,
-# so nothing else can reject it) and is treated as a blind frame.
-CON_FULL_BLOOM_MIN = 0.5
+# For elements with a glow band (con_glow_colors): the TRUE full ring's pale
+# bloom is a brief PULSE, not a steady state -- measured on log 2d376d07 the
+# genuine full sat at bloom 0.01 for seconds with peaks of only 0.21-0.74
+# every few seconds, so a per-frame gate (the old 0.5) rejected genuine fulls
+# for 5s+ ('still reading full concerto as 99'). A full-geometry ring is
+# accepted as GENUINE when ANY of:
+#   - the ring was seen at a clean PARTIAL fill earlier this visit (a genuine
+#     full GROWS from partials; the decoy overlay appears fully-formed at
+#     switch-in and never shows a partial),
+#   - this frame's bloom reaches CON_FULL_BLOOM_MIN (a pulse peak; decoy
+#     measures a constant ~0.01),
+#   - a peak was seen within CON_BLOOM_MEMORY (pulse trough between peaks).
+# Otherwise it is the decoy overlay: a blind frame, held.
+CON_FULL_BLOOM_MIN = 0.15
+CON_BLOOM_MEMORY = 8.0
 
 
 def _largest_arc_run(covered):
@@ -322,9 +331,12 @@ def con_ring_profile(cropped, lower, upper, glow_lower=None, glow_upper=None):
 
 class ConReadState:
     """Per-task state for the concerto reader: frame memo, full-confirm
-    sightings, and the last trusted value for untrusted-frame holds."""
+    sightings, the last trusted value for untrusted-frame holds, and the
+    genuine-ring evidence for the bloom/decoy gate (partials seen this visit,
+    last bloom-peak time)."""
     __slots__ = ('char_key', 'frame_key', 'memo', 'full_sight_t',
-                 'full_sight_frame', 'full_sight_lit', 'trusted', 'trusted_t')
+                 'full_sight_frame', 'full_sight_lit', 'trusted', 'trusted_t',
+                 'partial_seen', 'bloom_full_t')
 
     def __init__(self):
         self.reset()
@@ -338,6 +350,8 @@ class ConReadState:
         self.full_sight_lit = None
         self.trusted = None
         self.trusted_t = 0.0
+        self.partial_seen = False
+        self.bloom_full_t = 0.0
 
 
 def _signature_match(a, b):
@@ -398,38 +412,38 @@ def resolve_con_reading(state, profile, now, frame_key, char_key):
 
     full_geometry = (profile['total_lit'] >= CON_RING_COVERAGE_FULL
                      and profile['max_gap'] <= CON_FULL_MAX_GAP_SECTORS)
-    if (full_geometry and profile.get('expect_bloom')
-            and profile.get('bloom_lit_total', 0.0) < CON_FULL_BLOOM_MIN):
-        # DECOY overlay (user screenshot read con_full_100 on a visibly
-        # not-full gauge): SK's decoy star ring renders INSIDE the element
-        # colour range and is static, so neither the colour masks nor the
-        # two-frame signature confirm can reject it. Her TRUE full blooms
-        # PALE (the glow band; user's side-by-side reference). So for
-        # elements with a glow band, a closed ring carried by the element
-        # mask alone -- no bloom -- is the decoy hiding the gauge: a blind
-        # frame, not a full and not a zero.
-        #
-        # PULSE HOLE: the true full's pale bloom PULSES, so genuine-full
-        # frames in the low phase land HERE and would otherwise let an armed
-        # sighting age out of CON_FULL_CONFIRM_WINDOW between blooming frames
-        # -- the confirm could then never pair and the outro would silently
-        # die. So a low-bloom frame REFRESHES an already-armed sighting's
-        # timestamp when its lit signature matches (timestamp only -- never
-        # the frame/signature, and never ARMS one). The decoy cannot exploit
-        # this: arming requires passing the bloom gate, which the decoy by
-        # definition never does, so there is never a decoy-armed sighting to
-        # keep alive.
-        if (state.full_sight_frame is not None
-                and _signature_match(state.full_sight_lit, profile['lit'])
-                >= CON_FULL_SIGNATURE_MATCH):
-            state.full_sight_t = now
-        reason = 'element-only full ring (decoy overlay)'
-        if state.trusted is not None and now - state.trusted_t <= CON_HOLD_MAX_AGE:
-            result = (state.trusted, True, f'{reason}: holding last trusted')
-        else:
-            result = (0.99, True, f'{reason}: no recent trusted value')
-        state.memo = result
-        return result
+    if full_geometry and profile.get('expect_bloom'):
+        # DECOY overlay vs GENUINE full (user screenshot read con_full_100 on
+        # a visibly not-full gauge): the decoy star ring renders INSIDE the
+        # element colour range, static and fully-formed AT SWITCH-IN, so
+        # neither the colour masks nor the signature confirm can reject it.
+        # A genuine full differs in two measurable ways (log 2d376d07):
+        # it GROWS from partial fills observed earlier in the visit, and its
+        # pale bloom PULSES (peaks 0.21-0.74 every few seconds vs the decoy's
+        # constant ~0.01). Accept the full when either signal is present;
+        # remember a peak for CON_BLOOM_MEMORY so the troughs between pulses
+        # stay accepted.
+        if profile.get('bloom_lit_total', 0.0) >= CON_FULL_BLOOM_MIN:
+            state.bloom_full_t = now
+        genuine = (state.partial_seen
+                   or now - state.bloom_full_t <= CON_BLOOM_MEMORY)
+        if not genuine:
+            # No partial history, no bloom evidence: the decoy hiding the
+            # gauge -- a blind frame, not a full and not a zero. An armed
+            # sighting's timestamp is refreshed when the signature still
+            # matches (a pulse trough right after a peak must not let the
+            # confirm age out); it is never ARMED from here.
+            if (state.full_sight_frame is not None
+                    and _signature_match(state.full_sight_lit, profile['lit'])
+                    >= CON_FULL_SIGNATURE_MATCH):
+                state.full_sight_t = now
+            reason = 'element-only full ring (decoy overlay)'
+            if state.trusted is not None and now - state.trusted_t <= CON_HOLD_MAX_AGE:
+                result = (state.trusted, True, f'{reason}: holding last trusted')
+            else:
+                result = (0.99, True, f'{reason}: no recent trusted value')
+            state.memo = result
+            return result
     if full_geometry:
         prior_ok = (state.full_sight_frame is not None
                     and state.full_sight_frame != frame_key
@@ -448,6 +462,10 @@ def resolve_con_reading(state, profile, now, frame_key, char_key):
         state.full_sight_lit = None
         percent = min(profile['largest_run'], 0.99)
         reason = 'clean partial (contiguous arc)'
+        if 0.05 <= percent <= 0.9:
+            # a clearly-partial ring observed this visit: a later full is a
+            # ring that FILLED, not the fully-formed-at-entry decoy overlay.
+            state.partial_seen = True
     state.trusted = percent
     state.trusted_t = now
     result = (percent, False, reason)
