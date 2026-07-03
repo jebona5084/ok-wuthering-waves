@@ -129,6 +129,12 @@ CON_FULL_SIGNATURE_MATCH = 0.95
 # it, fall back to the raw (capped) reading so a chronic misclassification can
 # never freeze the value forever.
 CON_HOLD_MAX_AGE = 2.5
+# For elements with a glow band (con_glow_colors), a TRUE full ring blooms
+# pale: at least this fraction of sectors must be lit by the glow/bright
+# masks for a full-geometry ring to count as full. A closed ring carried by
+# the element mask alone is the DECOY overlay (renders in-range and static,
+# so nothing else can reject it) and is treated as a blind frame.
+CON_FULL_BLOOM_MIN = 0.5
 
 
 def _largest_arc_run(covered):
@@ -251,6 +257,11 @@ def con_ring_profile(cropped, lower, upper, glow_lower=None, glow_upper=None):
     union_band = (element_or_glow | bright) & in_band
     lit_per_sector = np.bincount(bins[union_band], minlength=CON_RING_SECTORS)
     element_per_sector = np.bincount(bins[element_or_glow & in_band], minlength=CON_RING_SECTORS)
+    if glow_lower is not None:
+        bloom = np.all((cropped >= glow_lower) & (cropped <= glow_upper), axis=2) | bright
+    else:
+        bloom = bright
+    bloom_per_sector = np.bincount(bins[bloom & in_band], minlength=CON_RING_SECTORS)
 
     safe_band = np.maximum(band_per_sector, 1)
     density = lit_per_sector / safe_band
@@ -261,6 +272,10 @@ def con_ring_profile(cropped, lower, upper, glow_lower=None, glow_upper=None):
     element_lit = ((element_density >= CON_SECTOR_DENSITY_LIT)
                    & (element_per_sector >= CON_SECTOR_MIN_PIXELS)
                    & (band_per_sector > 0))
+    bloom_density = bloom_per_sector / safe_band
+    bloom_lit = ((bloom_density >= CON_SECTOR_DENSITY_LIT)
+                 & (bloom_per_sector >= CON_SECTOR_MIN_PIXELS)
+                 & (band_per_sector > 0))
 
     lit_list = lit.tolist()
     band_gray = cropped[in_band].mean() if np.any(in_band) else 0.0
@@ -270,6 +285,8 @@ def con_ring_profile(cropped, lower, upper, glow_lower=None, glow_upper=None):
         'largest_run': _largest_arc_run(lit_list) / CON_RING_SECTORS,
         'max_gap': _largest_gap_run(lit_list),
         'element_lit_total': float(np.count_nonzero(element_lit)) / CON_RING_SECTORS,
+        'bloom_lit_total': float(np.count_nonzero(bloom_lit)) / CON_RING_SECTORS,
+        'expect_bloom': glow_lower is not None,
         'pollution': float(pollution),
         'brightness': float(band_gray),
         'bright_core': float(bright_core),
@@ -354,6 +371,23 @@ def resolve_con_reading(state, profile, now, frame_key, char_key):
 
     full_geometry = (profile['total_lit'] >= CON_RING_COVERAGE_FULL
                      and profile['max_gap'] <= CON_FULL_MAX_GAP_SECTORS)
+    if (full_geometry and profile.get('expect_bloom')
+            and profile.get('bloom_lit_total', 0.0) < CON_FULL_BLOOM_MIN):
+        # DECOY overlay (user screenshot read con_full_100 on a visibly
+        # not-full gauge): SK's decoy star ring renders INSIDE the element
+        # colour range and is static, so neither the colour masks nor the
+        # two-frame signature confirm can reject it. Her TRUE full blooms
+        # PALE (the glow band; user's side-by-side reference). So for
+        # elements with a glow band, a closed ring carried by the element
+        # mask alone -- no bloom -- is the decoy hiding the gauge: a blind
+        # frame, not a full and not a zero.
+        reason = 'element-only full ring (decoy overlay)'
+        if state.trusted is not None and now - state.trusted_t <= CON_HOLD_MAX_AGE:
+            result = (state.trusted, True, f'{reason}: holding last trusted')
+        else:
+            result = (0.99, True, f'{reason}: no recent trusted value')
+        state.memo = result
+        return result
     if full_geometry:
         prior_ok = (state.full_sight_frame is not None
                     and state.full_sight_frame != frame_key
@@ -1410,6 +1444,7 @@ class BaseCombatTask(CombatCheck):
         self.log_debug(
             f'get_current_con {percent:.2f} [{reason}] lit={profile["total_lit"]:.2f} '
             f'run={profile["largest_run"]:.2f} gap={profile["max_gap"]} '
+            f'bloom={profile["bloom_lit_total"]:.2f} '
             f'pol={profile["pollution"]:.2f} br={profile["brightness"]:.0f} '
             f'core={profile["bright_core"]:.2f}')
 
@@ -1509,7 +1544,9 @@ con_glow_colors = [
     {
         'r': (190, 255),
         'g': (180, 250),  # pale bloomed gold for spectro full ring
-        'b': (110, 210)
+        'b': (135, 210)   # blue FLOOR above the element range's 130 cap, so the
+                          # glow mask can never light on element-coloured pixels
+                          # (the decoy ring renders in-range -- see below)
     },
     None,  # electric
     None,  # fire
