@@ -321,8 +321,31 @@ class Augusta(BaseChar):
                 if self.task.wait_until(lambda: not self.liberation_available(), post_action=self.send_liberation_key,
                                         time_out=2):
                     self.record_liberation_use()
+                    # Majesty block (reactive-phase fix): the old code switched out
+                    # RIGHT HERE on every normal (time_out < 14) visit -- the lib
+                    # landed and Augusta left before a single Griffin cast, so her
+                    # main Majesty builder trickled in at ~1 enhanced skill per 3s
+                    # visit, interleaved with Iuno/SK field time, and lib2 took
+                    # whole team cycles to light. Do what the scripted aug_burst
+                    # does instead: chain the Griffin hits NOW, in the same visit
+                    # as the lib that enabled them.
+                    for _ in range(self.ENHANCED_SKILL_COUNT):
+                        self.click_resonance()           # griffin x3 -> Majesty
+                    self._heavy_or_prowess()             # prowess/forte: Majesty + con
+                    if self.check_majesty():
+                        if not self._team_buffs_ready():
+                            # hold the big burst for both support buffs; the exit
+                            # below is outro-hardened, so SK claims the intro and
+                            # the cycle brings the buffs back onto her.
+                            return self.switch_next_char()
+                        if self._build_and_cast_majesty():
+                            self.send_echo_key()
+                        return self.switch_next_char()
                     if time_out < 14:
                         return self.switch_next_char()
+                    # inside Iuno's 14s buffed window with lib2 not lit yet: stay
+                    # on field -- the loop keeps building (prowess / griffin) and
+                    # the majesty check at the top fires the burst when it lights.
             self.click()
             self.cycle_sleep()
         self.send_echo_key()
@@ -377,12 +400,73 @@ class Augusta(BaseChar):
             if isinstance(char, ShoreKeeper):
                 return char.auto_dodge(condition=self.flying)
 
+    # Reactive-phase outro top-off knobs. Her outro is CYCLE-CRITICAL, same as
+    # the supports': (1) the kit restores +1 Majesty when the character she
+    # outros into performs their own outro -- with plain-swap exits that chain
+    # never runs and Majesty rebuilds only from griffin casts; (2) an outro exit
+    # hands SK the intro her MUST-claim keys off, so the Augusta -> SK -> Augusta
+    # buff cycle actually turns. So she gets the supports' mandatory-style budget.
+    OUTRO_TOPOFF_THRESHOLD = 0.6
+    OUTRO_TOPOFF_BUDGET = 4.0
+
+    def _build_concerto_majesty(self):
+        """One concerto-building action that is SAFE for Augusta.
+
+        The shared ``build_concerto`` casts LIBERATION first -- for Augusta that
+        would burn a lit lib1 (or the lit lib2 she is holding for team buffs)
+        just to fill the ring; ``reactive_outro_topoff``'s own docstring bans
+        exactly that for a main DPS, which is why she was left with 0.8s of
+        plain basics before. Her echo (False Sovereign) stays reserved too --
+        it is the burst finisher. Build with: enhanced skill / griffin first
+        (double-dips: concerto AND Majesty energy), then prowess, then forte,
+        else a basic attack.
+        """
+        if self.resonance_available():
+            self.click_resonance()
+            return
+        if self.check_prowess() and self.perform_prowess():
+            return
+        if self.heavy_click_forte(self.is_forte_full):
+            return
+        self.click()
+
+    def _reactive_outro_topoff(self, kwargs):
+        """Outro-harden Augusta's REACTIVE-phase exits (mutates ``kwargs``).
+
+        No-op while the scripted rotation drives (it tops off before its own
+        hand-offs). The generic ``reactive_outro_topoff(self, kwargs)`` this
+        replaces gave her only 0.8s of plain basics above 0.7 con -- SK's file
+        logs that exact top-off leaving at 0.89/0.74 con -- so most of her exits
+        were PLAIN swaps: no outro, no +1 Majesty from the partner-outro chain,
+        and no intro for SK's MUST-claim. Build with her real (lib-safe) sources
+        instead and force the outro path on a confirmed-full ring.
+        """
+        from src.combat.VariableRotation import get_active_rotation
+        from src.combat.StrictRotation import confirm_con_full, OUTRO_SWAP_SETTLE
+        if get_active_rotation(self.task).is_active():
+            return kwargs
+        con = self.get_current_con()
+        if self.OUTRO_TOPOFF_THRESHOLD <= con < 1:
+            start = time.time()
+            while time.time() - start < self.OUTRO_TOPOFF_BUDGET:
+                if confirm_con_full(self):
+                    break
+                self._build_concerto_majesty()
+        if confirm_con_full(self):
+            if self.flying():
+                self.wait_down()
+            # settle the last action so the swap reads as a clean outro (same
+            # rationale as the scripted hand-off's OUTRO_SWAP_SETTLE).
+            self.sleep(OUTRO_SWAP_SETTLE)
+            kwargs['free_intro'] = True
+        return kwargs
+
     def switch_next_char(self, *args, **kwargs):
-        # Reactive-phase outro hardening: finish a near-full ring before swapping
-        # so the swap outros (transfers her buff) instead of wasting it. No-op
-        # while the scripted rotation drives (it tops off before its own outros).
-        from src.combat.VariableRotation import reactive_outro_topoff
-        reactive_outro_topoff(self, kwargs)
+        # Reactive-phase outro hardening: finish a near-full ring with her
+        # lib-safe builders before swapping so the swap outros (Majesty chain +
+        # SK's claim) instead of wasting it. No-op while the scripted rotation
+        # drives (it tops off before its own outros).
+        self._reactive_outro_topoff(kwargs)
         return super().switch_next_char(*args, **kwargs)
 
     def on_combat_end(self, chars):
