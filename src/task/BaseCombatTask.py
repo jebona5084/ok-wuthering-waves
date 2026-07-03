@@ -65,6 +65,12 @@ CON_RING_POLLUTION_MAX = 0.35
 #   disagree by more than this, trust the arc (a stale/poisoned baseline skews
 #   the area percent; the arc needs no calibration)
 CON_RING_DISAGREE = 0.2
+# The arc-ONLY full promotion (clean geometry, area channel disagreeing) needs
+# two full sightings this close together: one frame of a ring-coloured field
+# sweep bridging the gap sectors must not fake a full. Read cadence during
+# top-offs is 0.05-0.3s, and the engine's almost-full path re-reads after
+# 0.05s, so a genuine full confirms within one extra read.
+ARC_FULL_STREAK_WINDOW = 0.6
 
 
 def _largest_arc_run(covered):
@@ -1040,11 +1046,12 @@ class BaseCombatTask(CombatCheck):
         if max_is_full:
             percent = 1
             self.con_full_size[str(target_index)] = max_area
+            self._arc_full_last = time.time()   # a genuine full sighting feeds the streak
 
         if percent != 1 and baseline > 0:
             percent = max_area / baseline
         if not max_is_full:
-            if not polluted and arc >= CON_RING_COVERAGE_FULL:
+            if not polluted and not whiteout and arc >= CON_RING_COVERAGE_FULL:
                 # A clean contiguous full ring is FULL regardless of what the
                 # area channel thinks. count_rings can miss a genuine full (a
                 # transient VFX gap, the contour-convexity test failing) and the
@@ -1052,15 +1059,34 @@ class BaseCombatTask(CombatCheck):
                 # 835f001c: genuine fulls at 2.1x stuck at 0.99 forever; a
                 # baseline stamped off a bright glow makes a dim-rendered full
                 # read ~0.5 -- and the old rescue only ran when percent >= 1, so
-                # the dim case could NEVER be confirmed). Clean geometry decides;
-                # the stamp recalibrates the baseline so poisoning is not sticky
-                # in either direction. A flash cannot fake this: it floods
-                # outside the annulus and trips `polluted`.
-                self.logger.info(f'is_con_full confirmed full by angular arc ({percent:.2f})')
-                percent = 1
-                max_is_full = True
-                self.con_full_size[str(target_index)] = max_area
+                # the dim case could NEVER be confirmed).
+                #
+                # BUT geometry alone must PERSIST to be trusted: a single frame
+                # where a ring-coloured field sweep (SK's Stellarealm) bridges
+                # the gap sectors reads as a contiguous full ring with low
+                # pollution, and one such frame faked a full on a visibly
+                # partial ring ('sk is not getting full concerto') -- and then
+                # latched the char cache at 1, defeating the double-read
+                # confirm. So the arc-only promotion needs TWO clean arc-full
+                # sightings within ARC_FULL_STREAK_WINDOW: a moving sweep
+                # cannot hold the bridge across reads, a genuinely full (even
+                # dim-rendered) ring trivially can. The stamp still
+                # recalibrates the baseline so poisoning is not sticky.
+                now = time.time()
+                streak_ok = now - getattr(self, '_arc_full_last', 0) < ARC_FULL_STREAK_WINDOW
+                self._arc_full_last = now
+                if streak_ok:
+                    self.logger.info(f'is_con_full confirmed full by angular arc ({percent:.2f})')
+                    percent = 1
+                    max_is_full = True
+                    self.con_full_size[str(target_index)] = max_area
+                else:
+                    self.logger.info(
+                        f'is_con_full arc-full seen once (area {percent:.2f}); needs a '
+                        f'second clean read within {ARC_FULL_STREAK_WINDOW}s to confirm')
+                    percent = 0.99
             else:
+                self._arc_full_last = 0   # broken streak: this frame is not a clean full
                 if percent >= 1:
                     self.logger.warning(
                         f'is_con_full not full but percent greater than 1, set to 0.99, '
