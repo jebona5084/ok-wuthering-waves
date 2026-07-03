@@ -119,8 +119,13 @@ CON_WHITEOUT_BRIGHTNESS = 120
 CON_WHITEOUT_MAX_ELEMENT_LIT = 0.20
 # The two full sightings must land on different frames this close together.
 # Read cadence during top-offs is 0.05-0.3s and the engine's almost-full path
-# re-reads after 0.05s, so a genuine full confirms within one extra read.
-CON_FULL_CONFIRM_WINDOW = 0.6
+# re-reads after 0.05s -- but the CAPTURE cadence is what actually spaces
+# distinct frames, and under load it can drop to a few fps: with the old 0.6s
+# window each armed sighting expired before the next distinct frame arrived
+# and a genuine full sat at 0.99 forever ('detecting a full concerto as 99').
+# The signature match is the real anti-sweep gate; the window only bounds
+# staleness, so it can afford low-fps tolerance.
+CON_FULL_CONFIRM_WINDOW = 1.5
 # The two sightings' lit-sector signatures must agree on at least this
 # fraction of sectors: a sweep bridging the gap moves between frames, a full
 # ring is static.
@@ -1474,8 +1479,16 @@ class BaseCombatTask(CombatCheck):
                 profile = p
 
         char = self.get_current_char(raise_exception=False)
+        # Frame identity for the memo / two-sighting confirm. id(self.frame)
+        # alone is NOT enough: capture backends can reuse the same buffer for
+        # every frame (constant id -> the second sighting is rejected as "the
+        # same frame" and the memo freezes -- a genuine full then reads 0.99
+        # forever). Pair the id with a cheap content checksum of the crop so a
+        # reused buffer with NEW content is a new frame; a genuinely duplicated
+        # frame still memoizes as one sighting.
+        frame_key = (id(self.frame), int(cropped[::5, ::5].sum()))
         percent, untrusted, reason = resolve_con_reading(
-            self._con_state(), profile, time.time(), id(self.frame),
+            self._con_state(), profile, time.time(), frame_key,
             id(char) if char is not None else None)
         self.con_read_untrusted = untrusted
         self.log_debug(
