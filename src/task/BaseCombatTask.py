@@ -128,8 +128,16 @@ CON_WHITEOUT_MAX_ELEMENT_LIT = 0.20
 CON_FULL_CONFIRM_WINDOW = 1.5
 # The two sightings' lit-sector signatures must agree on at least this
 # fraction of sectors: a sweep bridging the gap moves between frames, a full
-# ring is static.
-CON_FULL_SIGNATURE_MATCH = 0.95
+# ring is static. 0.90 (7 sectors of slack) tolerates the pulse flicker of a
+# genuine full's bloom edges; a moving sweep displaces far more than 7
+# sectors between distinct frames.
+CON_FULL_SIGNATURE_MATCH = 0.90
+# The decoy overlay exists only for the first seconds after a switch-in
+# (footage 048ca5ff: ~6.5s, appearing fully-formed at entry). A full-geometry
+# ring seen past this long on field is a ring that FILLED while playing --
+# genuine regardless of bloom or partial history (covers a visit entered at
+# a near-full level where no sub-0.94 partial was ever observed).
+CON_ENTRY_DECOY_MAX = 8.0
 # On untrusted frames the last trusted value is held at most this long; past
 # it, fall back to the raw (capped) reading so a chronic misclassification can
 # never freeze the value forever.
@@ -426,7 +434,8 @@ def resolve_con_reading(state, profile, now, frame_key, char_key):
         if profile.get('bloom_lit_total', 0.0) >= CON_FULL_BLOOM_MIN:
             state.bloom_full_t = now
         genuine = (state.partial_seen
-                   or now - state.bloom_full_t <= CON_BLOOM_MEMORY)
+                   or now - state.bloom_full_t <= CON_BLOOM_MEMORY
+                   or profile.get('on_field', 0.0) > CON_ENTRY_DECOY_MAX)
         if not genuine:
             # No partial history, no bloom evidence: the decoy hiding the
             # gauge -- a blind frame, not a full and not a zero. An armed
@@ -463,8 +472,12 @@ def resolve_con_reading(state, profile, now, frame_key, char_key):
         percent = min(profile['largest_run'], 0.99)
         reason = 'clean partial (contiguous arc)'
         if 0.05 <= percent <= 0.9:
-            # a clearly-partial ring observed this visit: a later full is a
+            # a CLEARLY-partial ring observed this visit: a later full is a
             # ring that FILLED, not the fully-formed-at-entry decoy overlay.
+            # The 0.9 ceiling keeps distance from decoy FLICKER (a decoy frame
+            # dropping a couple of sectors reads ~0.93-0.94 and must not stamp
+            # this); visits entered above 0.9 are covered by the on-field-time
+            # signal instead.
             state.partial_seen = True
     state.trusted = percent
     state.trusted_t = now
@@ -1497,6 +1510,13 @@ class BaseCombatTask(CombatCheck):
                 profile = p
 
         char = self.get_current_char(raise_exception=False)
+        # seconds the current char has been on field: the decoy overlay only
+        # exists right after a switch-in, so this is one of the genuine-full
+        # signals (see resolve_con_reading).
+        if char is not None and getattr(char, 'last_switch_in_time', -1) > 0:
+            profile['on_field'] = time.time() - char.last_switch_in_time
+        else:
+            profile['on_field'] = 0.0
         # Frame identity for the memo / two-sighting confirm. id(self.frame)
         # alone is NOT enough: capture backends can reuse the same buffer for
         # every frame (constant id -> the second sighting is rejected as "the
