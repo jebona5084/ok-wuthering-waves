@@ -145,14 +145,14 @@ class ShoreKeeper(BaseChar):
         self.spend_forte()
         self.switch_next_char()
 
-    # The GOLD blaze of her full forte bar (user screenshot: bright yellow
-    # segments, flame tips at both ends). Deliberately excludes the dim
-    # gray-white dashes of an uncharged bar (their blue channel is far above
-    # this cap) and the near-white forte_white_color glyph range.
+    # The GOLD blaze of her full forte bar, measured from video frames of the
+    # actual full state (density in the sample box: full 0.20-0.38, everything
+    # else <=0.03). The blue-channel cap is what excludes the dim gray-white
+    # dashes of an uncharged bar and the near-white forte_white_color glyph.
     FORTE_GOLD = {
-        'r': (200, 255),
-        'g': (150, 235),
-        'b': (30, 150)
+        'r': (170, 255),
+        'g': (140, 255),
+        'b': (20, 160)
     }
 
     def _forte_bar_glowing(self):
@@ -160,9 +160,17 @@ class ShoreKeeper(BaseChar):
         checks NEAR-WHITE (244+/246+/250+) pixels, but SK's full bar blazes
         GOLD -- the white check reads ~0 on it, which is why the first
         fallback never fired either (log aeadc5b2: zero forte events again).
-        Measures the gold glow in the same right-end box; drawn on the overlay
-        as forte_gold_<pct> for live verification."""
-        box = self.task.box_of_screen_scaled(3840, 2160, 2251, 1993, 2311, 2016,
+
+        The box samples the RIGHT END of the bar BODY, not the end-cap glyph
+        the generic forte_full box uses: frame measurements showed the blaze
+        peters out right where that glyph box starts (density 0.081 there,
+        under any safe threshold, and Iuno's bar cap reads the same 0.08).
+        Position doubles as the full-vs-partial discriminator -- her segments
+        fill left to right and never reach this region until full (measured
+        0.000-0.008 partial vs 0.20+ full), so colour alone not telling
+        99% from 100% doesn't matter here. Drawn on the overlay as
+        forte_gold_<pct> for live verification."""
+        box = self.task.box_of_screen_scaled(3840, 2160, 2110, 1996, 2210, 2036,
                                              name='forte_gold', hcenter=True)
         percent = self.task.calculate_color_percentage(self.FORTE_GOLD, box)
         return percent > 0.12
