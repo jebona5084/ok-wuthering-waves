@@ -43,8 +43,12 @@ class ShoreKeeper(BaseChar):
         it applies goes up immediately -- she was delaying it behind filler basics
         / a 2.2s attack, so the buff was still down while the cast was available.
         click_liberation no-ops when it is on cooldown, and the dodge cuts the
-        Stellarealm-deploy recovery. Returns True if it fired."""
+        Stellarealm-deploy recovery. On success the Stellarealm is stamped on the
+        buff tracker (fixed 30s field that persists with her off-field) so the
+        rotation can read its live remaining. Returns True if it fired."""
         if self.click_liberation():
+            from src.combat.BuffTracker import get_buff_tracker, SK_LIBERATION
+            get_buff_tracker(self.task).apply(SK_LIBERATION, source=self)
             self.dodge_cancel()
             return True
         return False
@@ -80,7 +84,23 @@ class ShoreKeeper(BaseChar):
         self.heavy_click_forte(self.is_mouse_forte_full)
         self.switch_next_char()
 
+    def _bind_augusta_outro(self):
+        """Register SK as the receiver of Augusta's outro amp when this intro
+        consumed it. The buff (15% amp; +1 Majesty for Augusta when SK performs
+        her OWN outro while carrying it) expires the moment SK is switched off,
+        and the tracker's on_char_switch_out models exactly that -- so its
+        remaining() stays honest for anything reading it. Guarded: a transient
+        read error must never break the intro."""
+        try:
+            if self.has_intro and self.check_outro() in {'Augusta', 'char_augusta'}:
+                from src.combat.BuffTracker import get_buff_tracker, AUGUSTA_OUTRO
+                get_buff_tracker(self.task).bind_receiver(AUGUSTA_OUTRO,
+                                                          self.char_name)
+        except Exception:
+            self.logger.debug('ShoreKeeper: bind_augusta_outro skipped', exc_info=True)
+
     def _intro_wait(self):
+        self._bind_augusta_outro()
         self.task.skip_combat_check = True
         try:
             self.logger.debug('ShoreKeeper wait intro animation')
@@ -176,11 +196,22 @@ class ShoreKeeper(BaseChar):
         # sources instead (echo/skill/lib via the aggressive top-off) and never
         # early-bail (mandatory), then leave via a forced outro when full.
         from src.combat.VariableRotation import reactive_outro_topoff
+        from src.combat.BuffTracker import get_buff_tracker, SK_OUTRO
         reactive_outro_topoff(self, kwargs, threshold=0.6, aggressive=True,
                               mandatory=True)
-        if self.is_con_full():
+        tracker = get_buff_tracker(self.task)
+        # Leaving the field ends any receiver-bound buff riding on her (Augusta's
+        # outro amp) -- outro or plain swap alike, per the kit's 'expires on
+        # swap'. The in-game +1 Majesty for Augusta already resolved if this exit
+        # is the outro; the tracker just stops counting the amp.
+        tracker.on_char_switch_out(self.char_name)
+        if kwargs.get('free_intro') or self.is_con_full():
             self.outrotime = time.time()
             self.dodge_count = 5
+            # 15% team amp + recovery butterflies; per the kit map it SURVIVES
+            # switching, so it is duration-only (~29s tuned window) -- stamped
+            # here so Augusta's burst gate reads its live remaining.
+            tracker.apply(SK_OUTRO, source=self)
         return super().switch_next_char(*args, **kwargs)
 
     def auto_dodge(self, condition):

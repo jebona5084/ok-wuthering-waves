@@ -160,6 +160,11 @@ class Iuno(BaseChar):
                 heavy_success = True
             if heavy_success:
                 self.last_heavy = time.time()
+                # Full Moon Domain is up: fixed 30s field timer that persists
+                # with her off-field -- stamp it so the rotation can read the
+                # live remaining.
+                from src.combat.BuffTracker import get_buff_tracker, IUNO_DOMAIN
+                get_buff_tracker(self.task).apply(IUNO_DOMAIN, source=self)
                 # No settle: Absolute Fullness completes and its buff transfers
                 # even when the swap lands during it (kit contract), so the
                 # caller may switch out immediately.
@@ -205,21 +210,38 @@ class Iuno(BaseChar):
         # as many exits as possible into outros.
         from src.combat.VariableRotation import reactive_outro_topoff
         from src.combat.StrictRotation import confirm_con_full
+        from src.combat.BuffTracker import (get_buff_tracker, IUNO_OUTRO,
+                                            IUNO_DOMAIN)
         reactive_outro_topoff(self, kwargs, threshold=0.6, aggressive=True,
                               mandatory=True)
-        # confirm_con_full: her own Full Moon Domain sweeps ring-coloured arcs
-        # through the concerto box; a single-frame full read can be fake, and a
+        tracker = get_buff_tracker(self.task)
+        # Will this exit be an OUTRO? free_intro is only ever set on a
+        # CONFIRMED-full ring (both top-off paths), so it implies con full and
+        # skips a second read; otherwise double-read the ring ourselves --
+        # confirm_con_full because her own Full Moon Domain sweeps ring-coloured
+        # arcs through the concerto box, a single-frame full can be fake, and a
         # fake here would burn Absolute Fullness's 20s cooldown for no buff.
-        if (confirm_con_full(self)
+        will_outro = bool(kwargs.get('free_intro')) or confirm_con_full(self)
+        if (will_outro
                 and self.time_elapsed_accounting_for_freeze(self.last_heavy) > 20
                 and self.task.find_feature("iuno_heavy", box="box_extra_action",
                                            threshold=0.55)):
             self._hold_special_heavy()
             self.last_heavy = time.time()
+            tracker.apply(IUNO_DOMAIN, source=self)  # 30s field, persists off-field
             # NO settle: the outro swap is emitted DURING Absolute Fullness --
             # it completes and its buff transfers regardless (kit contract).
             self.logger.info('Iuno: Absolute Fullness held at 100 concerto; '
                              'outroing during it')
+        # She is never a bound receiver today, so this is a no-op safety net --
+        # but keep the swap-out hook symmetric across the team.
+        tracker.on_char_switch_out(self.char_name)
+        if will_outro:
+            # 50% Heavy-Attack amp rides this swap to the incoming character.
+            # The RECEIVER binds itself (Augusta._buffed_window) so the tracker
+            # can end the buff early if the receiver is switched off; until
+            # then remaining() counts down its 15s window.
+            tracker.apply(IUNO_OUTRO, source=self)
         return super().switch_next_char(*args, **kwargs)
 
     def on_combat_end(self, chars):

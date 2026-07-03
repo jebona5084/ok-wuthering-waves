@@ -20,19 +20,31 @@ class Augusta(BaseChar):
     # (0.501, 0.840)); widened left so "10" fits.
     IUNO_BUFF_BOX = (1886, 1789, 1950, 1839)
     IUNO_BUFF_TARGET = 10
-    # Augusta's big burst must ride BOTH support buffs. SK's outro buff has no
-    # badge to OCR, so it is tracked by recency of her last con-full exit
-    # (ShoreKeeper.outrotime). The buff lasts ~30s of GAME time and the elapsed
-    # here is freeze-adjusted (same clock), so use nearly the full duration: a
-    # 25s window discarded a burst-ready Augusta (0.95 con, lib2 lit) at ~27s
-    # elapsed while the buff was visibly still active (log 02:16:37), and the
-    # rotation then ping-ponged as the two buff windows never overlapped.
+    # Augusta's big burst must ride BOTH support buffs. Liveness is now read from
+    # the BuffTracker as SECONDS REMAINING (stamped by SK/Iuno at the moment they
+    # apply the buffs, freeze-adjusted through their own clocks); the two windows
+    # below are the LEGACY recency fallbacks, used only until the tracker has
+    # seen each buff once (cold start / partial wiring). Their tuned values also
+    # seeded the tracker's DURATIONS table, so the mechanism swap does not retune
+    # the rotation:
+    # - SK: ~30s of game time; a 25s window discarded a burst-ready Augusta
+    #   (0.95 con, lib2 lit) at ~27s elapsed while the buff was visibly still
+    #   active (log 02:16:37), and the rotation then ping-ponged as the two buff
+    #   windows never overlapped -> 29.
     SK_BUFF_WINDOW = 29
-    # Iuno's buff after her outro: the engine's extended-intro FIELD window is
-    # 14s, but the buff itself outlasts it a little; 15s with margin. Recency is
-    # the PRIMARY detector: at 1 stack her badge shows NO digit, so the OCR
-    # reads 0 right when the buff is freshest (log f8c2363e).
+    # - Iuno: the engine's extended-intro FIELD window is 14s, but the buff
+    #   itself outlasts it a little; 15s with margin. Her badge OCR stays a
+    #   CONFIRMING fallback only: at 1 stack the badge shows NO digit, so it
+    #   reads 0 right when the buff is freshest (log f8c2363e).
     IUNO_BUFF_WINDOW = 15
+    # The burst payoff must LAND inside both buffs, not merely start inside
+    # them: once lib2 is lit, _build_and_cast_majesty resolves in ~3-6s (badge
+    # build is bounded at 4s, the majesty wait returns at once when already lit,
+    # then Spinslash 2 -> 2nd ult). Requiring this much REMAINING on each buff
+    # is the rotation recalculation: a buff with 1s left no longer passes the
+    # gate the way a bare "applied recently" check did -- she holds, the
+    # (outro-hardened) cycle refreshes the buffs, and the burst comes back live.
+    MIN_BURST_BUFF_REMAINING = 4.0
     # Escape hatch: never hold a lit 2nd lib hostage forever -- if the buffs are
     # still not both up after this long, burst anyway rather than waste it.
     MAJESTY_HOLD_MAX = 40
@@ -229,18 +241,31 @@ class Augusta(BaseChar):
         return float('inf')
 
     def _sk_buff_active(self):
-        """ShoreKeeper's outro buff is (approximately) live."""
+        """ShoreKeeper's outro buff will still be LIVE through the burst payoff.
+
+        Tracker-first: SK stamps SK_OUTRO at her con-full exits, so remaining()
+        is the freeze-adjusted seconds before wear-off; require enough of it for
+        the payoff to land inside the buff (MIN_BURST_BUFF_REMAINING). Falls back
+        to the legacy recency window only until the tracker has seen the buff
+        once (cold start)."""
+        from src.combat.BuffTracker import get_buff_tracker, SK_OUTRO
+        tracker = get_buff_tracker(self.task)
+        if tracker.has(SK_OUTRO):
+            return tracker.remaining(SK_OUTRO) >= self.MIN_BURST_BUFF_REMAINING
         return self._sk_outro_elapsed() < self.SK_BUFF_WINDOW
 
     def _swapped_out_since_iuno_outro(self):
         """Whether Augusta left the field AFTER Iuno's last outro.
 
-        Iuno's outro amplify dies the moment the buffed character swaps out
-        (kit contract: 'an Amplify outro buff that a swap would end'), so outro
-        RECENCY alone overstates the buff: 8s ago is meaningless if she swapped
-        out 5s ago. Raw timestamps compare fine -- both are time.time() stamps
-        (last_outro_time from the engine's outro exit, last_switch_time from
-        her own switch_out)."""
+        LEGACY fallback only: in the tracker path this early death is modelled
+        directly -- Augusta binds herself as IUNO_OUTRO's receiver and her
+        switch_next_char expires it, so remaining() already reads 0 after a
+        swap-out. Kept for the cold-start path. Iuno's outro amplify dies the
+        moment the buffed character swaps out (kit contract: 'an Amplify outro
+        buff that a swap would end'), so outro RECENCY alone overstates the
+        buff: 8s ago is meaningless if she swapped out 5s ago. Raw timestamps
+        compare fine -- both are time.time() stamps (last_outro_time from the
+        engine's outro exit, last_switch_time from her own switch_out)."""
         from src.char.Iuno import Iuno
         for char in self.task.chars:
             if isinstance(char, Iuno):
@@ -249,12 +274,23 @@ class Augusta(BaseChar):
         return False
 
     def _iuno_buff_active(self):
-        """Iuno's outro amplify is LIVE on Augusta right now.
+        """Iuno's outro amplify is LIVE on Augusta right now (and will stay live
+        through the burst payoff).
 
-        PRIMARY: outro recency, VOIDED by any swap-out since (the amplify does
-        not survive her leaving the field). The badge OCR is only a confirming
-        fallback: at 1 stack the badge shows no digit and reads 0, exactly when
-        the buff is freshest, so it must not be the gate."""
+        Tracker-first: Iuno stamps IUNO_OUTRO at her outro exits; Augusta binds
+        herself as its receiver on the buffed intro, and her own switch-out
+        expires it -- so remaining() already answers both 'was it applied' and
+        'did a swap kill it', with the payoff margin (MIN_BURST_BUFF_REMAINING)
+        on top. The badge OCR stays a CONFIRMING fallback only: at 1 stack the
+        badge shows no digit and reads 0, exactly when the buff is freshest, so
+        it must not be the gate. Cold-start falls back to the legacy recency
+        window voided by any swap-out since."""
+        from src.combat.BuffTracker import get_buff_tracker, IUNO_OUTRO
+        tracker = get_buff_tracker(self.task)
+        if tracker.has(IUNO_OUTRO):
+            if tracker.remaining(IUNO_OUTRO) >= self.MIN_BURST_BUFF_REMAINING:
+                return True
+            return self.iuno_buff_stacks() >= 1
         if (self._iuno_outro_elapsed() < self.IUNO_BUFF_WINDOW
                 and not self._swapped_out_since_iuno_outro()):
             return True
@@ -270,9 +306,11 @@ class Augusta(BaseChar):
         forever."""
         iuno_ok = self._iuno_buff_active()
         sk_ok = self._sk_buff_active()
-        detail = (f'iuno={iuno_ok} ({self._iuno_outro_elapsed():.0f}s ago, win '
-                  f'{self.IUNO_BUFF_WINDOW}) sk={sk_ok} ({self._sk_outro_elapsed():.0f}s '
-                  f'ago, win {self.SK_BUFF_WINDOW})')
+        from src.combat.BuffTracker import get_buff_tracker
+        detail = (f'iuno={iuno_ok} sk={sk_ok} '
+                  f'remaining={get_buff_tracker(self.task).snapshot()} '
+                  f'(legacy: iuno {self._iuno_outro_elapsed():.0f}s ago, sk '
+                  f'{self._sk_outro_elapsed():.0f}s ago)')
         if iuno_ok and sk_ok:
             self._majesty_wait_start = -1.0
             return True
@@ -301,12 +339,35 @@ class Augusta(BaseChar):
             return True
         return False
 
+    def _buffed_window(self):
+        """Dwell window for a visit entered on Iuno's outro, RECALCULATED from
+        the live buff.
+
+        Binds Augusta as IUNO_OUTRO's receiver (so her own switch-out expires
+        it -- the amplify dies the moment she leaves the field), then sizes the
+        window to the ACTUAL seconds remaining instead of a fixed 14: a fresh
+        outro still yields ~14s, but a re-entry mid-buff (resync, flicker) gets
+        only what is genuinely left, so she never overstays a dead amplify.
+        Falls back to the legacy fixed 14 when the tracker is cold."""
+        from src.combat.BuffTracker import get_buff_tracker, IUNO_OUTRO
+        tracker = get_buff_tracker(self.task)
+        tracker.bind_receiver(IUNO_OUTRO, self.char_name)
+        remaining = tracker.remaining(IUNO_OUTRO)
+        if remaining <= 0:
+            return 14
+        window = min(14.0, remaining)
+        self.logger.info(f'Augusta: buffed dwell recalculated from Iuno-outro '
+                         f'remaining {remaining:.1f}s -> window {window:.1f}s')
+        return window
+
     def _do_perform_default(self):
         time_out = switch_time
+        buffed = False
         if self.has_intro:
             self.continues_normal_attack(1.13)
             if self.has_sub_dps_intro and self.check_outro() in {'char_iuno'}:
-                time_out = 14
+                buffed = True
+                time_out = self._buffed_window()
         if self.flying():
             self.wait_down()
         start = time.time()
@@ -371,11 +432,12 @@ class Augusta(BaseChar):
                         if self._build_and_cast_majesty():
                             self.send_echo_key()
                         return self.switch_next_char()
-                    if time_out < 14:
+                    if not buffed:
                         return self.switch_next_char()
-                    # inside Iuno's 14s buffed window with lib2 not lit yet: stay
-                    # on field -- the loop keeps building (prowess / griffin) and
-                    # the majesty check at the top fires the burst when it lights.
+                    # inside Iuno's buffed window (dwell = live remaining) with
+                    # lib2 not lit yet: stay on field -- the loop keeps building
+                    # (prowess / griffin) and the majesty check at the top fires
+                    # the burst when it lights.
             self.click()
             self.cycle_sleep()
         self.send_echo_key()
@@ -497,6 +559,17 @@ class Augusta(BaseChar):
         # SK's claim) instead of wasting it. No-op while the scripted rotation
         # drives (it tops off before its own outros).
         self._reactive_outro_topoff(kwargs)
+        from src.combat.BuffTracker import get_buff_tracker, AUGUSTA_OUTRO
+        tracker = get_buff_tracker(self.task)
+        # The moment she leaves the field, any receiver-bound buff riding on her
+        # (Iuno's Heavy-Attack amp) is dead -- expire it so remaining() reads 0
+        # for the next burst gate instead of a stale recency window passing it.
+        tracker.on_char_switch_out(self.char_name)
+        if kwargs.get('free_intro'):
+            # Confirmed outro exit (both top-off paths only set free_intro on a
+            # confirmed-full ring): her 15% amp starts now; +1 Majesty follows
+            # if the receiver performs their own outro while carrying it.
+            tracker.apply(AUGUSTA_OUTRO, source=self)
         return super().switch_next_char(*args, **kwargs)
 
     def on_combat_end(self, chars):
