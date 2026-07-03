@@ -232,13 +232,31 @@ class Augusta(BaseChar):
         """ShoreKeeper's outro buff is (approximately) live."""
         return self._sk_outro_elapsed() < self.SK_BUFF_WINDOW
 
-    def _iuno_buff_active(self):
-        """Iuno's buff is on Augusta.
+    def _swapped_out_since_iuno_outro(self):
+        """Whether Augusta left the field AFTER Iuno's last outro.
 
-        PRIMARY: outro recency. The badge OCR is only a confirming fallback: at
-        1 stack the badge shows no digit and reads 0, exactly when the buff is
-        freshest, so it must not be the gate."""
-        if self._iuno_outro_elapsed() < self.IUNO_BUFF_WINDOW:
+        Iuno's outro amplify dies the moment the buffed character swaps out
+        (kit contract: 'an Amplify outro buff that a swap would end'), so outro
+        RECENCY alone overstates the buff: 8s ago is meaningless if she swapped
+        out 5s ago. Raw timestamps compare fine -- both are time.time() stamps
+        (last_outro_time from the engine's outro exit, last_switch_time from
+        her own switch_out)."""
+        from src.char.Iuno import Iuno
+        for char in self.task.chars:
+            if isinstance(char, Iuno):
+                return char.last_outro_time > 0 and \
+                    self.last_switch_time > char.last_outro_time
+        return False
+
+    def _iuno_buff_active(self):
+        """Iuno's outro amplify is LIVE on Augusta right now.
+
+        PRIMARY: outro recency, VOIDED by any swap-out since (the amplify does
+        not survive her leaving the field). The badge OCR is only a confirming
+        fallback: at 1 stack the badge shows no digit and reads 0, exactly when
+        the buff is freshest, so it must not be the gate."""
+        if (self._iuno_outro_elapsed() < self.IUNO_BUFF_WINDOW
+                and not self._swapped_out_since_iuno_outro()):
             return True
         return self.iuno_buff_stacks() >= 1
 
@@ -256,6 +274,18 @@ class Augusta(BaseChar):
                   f'{self.IUNO_BUFF_WINDOW}) sk={sk_ok} ({self._sk_outro_elapsed():.0f}s '
                   f'ago, win {self.SK_BUFF_WINDOW})')
         if iuno_ok and sk_ok:
+            self._majesty_wait_start = -1.0
+            return True
+        if iuno_ok:
+            # SK's window is stale but Iuno's amplify is LIVE ON HER NOW -- and
+            # it dies the moment she swaps out. Fleeing to refresh SK's buff
+            # (user footage: Iuno outro -> Augusta -> immediate swap to SK)
+            # destroys the amplify it was saving the burst for, and SK's buff
+            # can only be refreshed by exactly that fatal swap. Bursting on the
+            # live amplify is strictly better than trading it for nothing.
+            self.logger.info(f"Augusta: bursting on Iuno's live amplify -- SK "
+                             f'window stale, but a swap would destroy the '
+                             f'amplify ({detail})')
             self._majesty_wait_start = -1.0
             return True
         now = time.time()
