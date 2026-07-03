@@ -41,6 +41,14 @@ mismatched_names = {
     "HavocRover": "Rover: Havoc"
 }
 
+# Maximum plausible ratio of a concerto-ring area read to the calibrated full
+# size. A genuinely full ring reads ~1.0x (the angular rescue exists for the
+# 0.99-cap false negative just under it). Ratios far above mean bright VFX
+# flooded the ring box -- e.g. an f-break burst read 2.22x while the ring was
+# visibly half full -- and such reads must be rejected, not trusted or used to
+# recalibrate the baseline.
+CON_FULL_MAX_RATIO = 1.2
+
 
 class BaseCombatTask(CombatCheck):
     """基础战斗任务类，封装了游戏"鸣潮"中角色自动化操作的通用逻辑。"""
@@ -933,13 +941,24 @@ class BaseCombatTask(CombatCheck):
                 max_is_full = is_full
             if area > max_area:
                 max_area = int(area)
+        baseline = self.con_full_size[str(target_index)]
+        if max_is_full and baseline > 0 and max_area > baseline * CON_FULL_MAX_RATIO:
+            # A ring area FAR above the calibrated full size is not a bigger ring,
+            # it is bright VFX flooding the ring box (e.g. the f-break burst read
+            # 2.22x while the ring was visibly half full). Trusting it forced a
+            # fake outro AND, worse, stamped the polluted area as the new full-size
+            # baseline, after which genuinely full rings read ~0.45 and the outro
+            # never fired again. Do not trust it and do not let it recalibrate.
+            self.logger.warning(
+                f'is_con_full area {max_area} is {max_area / baseline:.2f}x the calibrated '
+                f'full size -- VFX pollution, treating as not full')
+            max_is_full = False
         if max_is_full:
             percent = 1
-        if max_is_full:
             self.con_full_size[str(target_index)] = max_area
 
-        if percent != 1 and self.con_full_size[str(target_index)] > 0:
-            percent = max_area / self.con_full_size[str(target_index)]
+        if percent != 1 and baseline > 0:
+            percent = max_area / baseline
         if not max_is_full and percent >= 1:
             # The ring area is at/above the calibrated full size, but count_rings
             # did not confirm a closed ring (a transient VFX gap, or the
@@ -948,8 +967,12 @@ class BaseCombatTask(CombatCheck):
             # exactly 1 the outro never fired. Confirm fullness by angular coverage
             # instead: a real full ring has ring-coloured pixels spanning the whole
             # 360 deg annulus, whereas a partial ring leaves a large angular gap.
+            # BOUNDED: the rescue exists for the ~1.0x-area false NEGATIVE. An area
+            # ratio above CON_FULL_MAX_RATIO is VFX pollution -- during a flash the
+            # angular check also sees 72/72 (the flash covers every sector), so it
+            # must not be allowed to confirm such a read as full.
             color_range = con_colors[target_index] if 0 <= target_index < len(con_colors) else con_colors[0]
-            if self.con_ring_angularly_full(cropped, color_range):
+            if percent <= CON_FULL_MAX_RATIO and self.con_ring_angularly_full(cropped, color_range):
                 self.logger.info(f'is_con_full confirmed full by angular coverage ({percent:.2f})')
                 percent = 1
                 max_is_full = True

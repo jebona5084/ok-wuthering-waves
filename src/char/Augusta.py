@@ -45,8 +45,11 @@ class Augusta(BaseChar):
         if beat.intro:
             self.wait_down()
         if beat.name == 'aug_open':
-            # 1. skill
-            self.click_resonance()
+            # 1. skill -- hold briefly after the cast: the hand-off (jump-cancel +
+            # swap) otherwise lands ~0.2s after the E press and cancels the cast
+            # before its effect registers (footage showed the opening E never
+            # landing).
+            self.click_resonance(post_sleep=0.5)
         elif beat.name == 'aug_open2':
             # 5. ha
             self._heavy_or_prowess()
