@@ -1050,6 +1050,7 @@ class BaseCombatTask(CombatCheck):
 
     def combat_end(self):
         """战斗结束时调用的清理方法。"""
+        self.clear_buff_overlay()
         current_char = self.get_current_char(raise_exception=False)
         if current_char:
             self.get_current_char().on_combat_end(self.chars)
@@ -1082,37 +1083,75 @@ class BaseCombatTask(CombatCheck):
     BUFF_OVERLAY_INTERVAL = 0.5
 
     def update_buff_overlay(self):
-        """Draw the live team-buff countdowns on the debug overlay.
+        """Render the live team-buff countdowns as a PANEL at the bottom right.
 
-        One labelled bar per tracked buff along the left edge of the screen,
-        in a FIXED order so each buff keeps its row. The label carries the
-        seconds remaining via the box-confidence suffix (the same formatting
-        the con_full box uses: 'buff_sk_outro_12' = 12s left), and the bar
-        WIDTH shrinks with the remaining fraction of the buff's duration --
-        an expired buff shows as a sliver labelled 0. Throttled by
-        BUFF_OVERLAY_INTERVAL; visible only with the debug overlay on.
+        Drawn as one opaque dark image patch via the overlay's blur-patch
+        channel (draw_boxes can only paint 2px outlines in 3 colours -- the
+        first draw_boxes version rendered as an unreadable white block). Each
+        buff keeps a fixed row: label, a bar that empties with the remaining
+        fraction of its duration, and the seconds left. Bar colour: green =
+        comfortably live, amber = under the burst-gate margin (4s), dark =
+        expired/never applied. Throttled by BUFF_OVERLAY_INTERVAL; the panel
+        is cleared at combat end.
         """
         now = time.time()
         if now - getattr(self, '_last_buff_overlay', 0) < self.BUFF_OVERLAY_INTERVAL:
             return
         self._last_buff_overlay = now
+        try:
+            import cv2
+            from ok.gui.Communicate import communicate
+        except Exception:  # pragma: no cover - headless/test environment
+            return
         from src.combat.BuffTracker import (get_buff_tracker, DURATIONS,
                                             SK_LIBERATION, SK_OUTRO, IUNO_OUTRO,
                                             IUNO_DOMAIN, AUGUSTA_OUTRO)
+        rows = (('SK Lib', SK_LIBERATION), ('SK Outro', SK_OUTRO),
+                ('Iuno Outro', IUNO_OUTRO), ('Moon Dom', IUNO_DOMAIN),
+                ('Aug Outro', AUGUSTA_OUTRO))
         tracker = get_buff_tracker(self)
-        x = int(self.width_of_screen(0.012))
-        y0 = int(self.height_of_screen(0.30))
-        row_h = max(6, int(self.height_of_screen(0.016)))
-        max_w = max(20, int(self.width_of_screen(0.09)))
-        boxes = []
-        for i, name in enumerate((SK_LIBERATION, SK_OUTRO, IUNO_OUTRO,
-                                  IUNO_DOMAIN, AUGUSTA_OUTRO)):
+        w = max(240, int(self.width_of_screen(0.11)))
+        row_h = max(20, int(w * 0.11))
+        pad = row_h // 2
+        h = pad * 2 + row_h * len(rows)
+        panel = np.full((h, w, 3), 24, dtype=np.uint8)          # dark BGR bg
+        bar_x = int(w * 0.36)
+        bar_w = w - bar_x - int(w * 0.17)
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        fs = row_h / 42.0
+        for i, (label, name) in enumerate(rows):
+            y = pad + i * row_h
             remaining = tracker.remaining(name)
             duration = DURATIONS.get(name) or 30.0
-            width = max(4, int(max_w * min(1.0, remaining / duration)))
-            boxes.append(Box(x, y0 + i * int(row_h * 1.8), width, row_h,
-                             confidence=remaining / 100.0, name=f'buff_{name}'))
-        self.draw_boxes('team_buffs', boxes)
+            frac = max(0.0, min(1.0, remaining / duration))
+            if remaining <= 0:
+                color = (70, 70, 70)                              # expired: dark
+            elif remaining <= 4.0:
+                color = (60, 170, 245)                            # amber: about to drop
+            else:
+                color = (110, 220, 120)                           # green: live
+            cv2.putText(panel, label, (pad, y + int(row_h * 0.72)), font, fs,
+                        (235, 235, 235), 1, cv2.LINE_AA)
+            cv2.rectangle(panel, (bar_x, y + int(row_h * 0.22)),
+                          (bar_x + bar_w, y + int(row_h * 0.80)), (58, 58, 58), -1)
+            if frac > 0:
+                cv2.rectangle(panel, (bar_x, y + int(row_h * 0.22)),
+                              (bar_x + int(bar_w * frac), y + int(row_h * 0.80)),
+                              color, -1)
+            cv2.putText(panel, f'{remaining:2.0f}s',
+                        (bar_x + bar_w + 4, y + int(row_h * 0.72)), font, fs,
+                        (235, 235, 235), 1, cv2.LINE_AA)
+        x0 = int(self.width_of_screen(0.99)) - w
+        y0 = int(self.height_of_screen(0.86)) - h
+        communicate.blur_overlay.emit([(x0, y0, w, h, panel)])
+
+    def clear_buff_overlay(self):
+        """Remove the buff panel from the overlay (combat over)."""
+        try:
+            from ok.gui.Communicate import communicate
+            communicate.clear_blur_overlay.emit()
+        except Exception:  # pragma: no cover - headless/test environment
+            pass
 
     def check_combat(self):
         """检查当前是否处于战斗状态, 如果不是则抛出异常。"""
