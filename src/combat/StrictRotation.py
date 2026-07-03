@@ -104,34 +104,6 @@ BEATS = [
 # opener is never replayed mid-combat.
 LOOP_START = 10
 
-# The character ORDER of the sustained loop (beats 10..15) -- the hand-authored
-# cycle: Augusta -> Iuno -> Augusta -> Iuno -> Augusta -> ShoreKeeper. The
-# ORDERED-REACTIVE channel below enforces this order through the switch
-# priorities AFTER the scripted opener has handed off, while every character
-# keeps its own frame-checked reactive rotation for the actions. Ordering is
-# scripted, actions stay adaptive.
-LOOP_ORDER = [beat.char for beat in BEATS[LOOP_START:]]
-
-# Ordered-reactive toggle (Character Config tab). Why it exists: with the
-# scripted rotation off after the opener, the ONLY ordering signals in the
-# reactive phase were the Augusta<->SK mutual outro claims -- Iuno received
-# field time only when an exit happened to be a PLAIN swap (no intro -> no
-# MUST fires -> role-based pick). Cycle composition therefore depended on
-# which exits happened to reach full concerto that run: some cycles carried
-# Iuno's amp into Augusta's burst, others ping-ponged Augusta<->SK until the
-# MAJESTY_HOLD_MAX bail burst unbuffed. That is the post-opener inconsistency
-# this channel removes: the expected-next character gets MUST, everyone else
-# NO, walking LOOP_ORDER deterministically.
-ORDERED_REACTIVE_CONFIG_KEY = 'Augusta Iuno SK Ordered Reactive'
-ORDERED_REACTIVE_DEFAULT = True
-
-# If the order pointer cannot advance for this long (expected character dead,
-# switch CD wedged, target lost), the channel degrades to NORMAL priorities so
-# it can never deadlock the fight; it re-engages on the next clean advance. A
-# buffed Augusta majesty visit legitimately holds the field ~14s+, so the
-# tolerance sits well above that.
-ORDER_STALL_TOLERANCE = 25.0
-
 # Before an OUTRO beat hands off, briefly top concerto off to full so the swap is
 # read as a coordinated outro (which transfers the character's buff). The top-off
 # now builds concerto with real actions (lib/echo/skill, see build_concerto), so
@@ -221,12 +193,6 @@ class StrictRotation:
         self._last_inactive_state = None  # dedup for the inactive-reason log
         self._last_seen = None  # wall-clock of the last beat run, for flicker debounce
         self._finished = False  # opener done -> strict rotation off (see STOP_AFTER_FIRST_ROTATION)
-        # ordered-reactive channel (see LOOP_ORDER): pointer into the loop
-        # order, advanced on REAL switch-outs (BaseChar.switch_out hooks), and
-        # the last-advance stamp for the stall degradation.
-        self._order_index = 0
-        self._order_last_advance = 0.0
-        self._order_stalled_logged = False
 
     # --- team / enablement -------------------------------------------------
     def team_names(self):
@@ -301,9 +267,6 @@ class StrictRotation:
         else:
             self.index = 0
             self._finished = False  # new combat -> run the opener (1st rotation) again
-            self._order_index = 0
-            self._order_last_advance = 0.0
-            self._order_stalled_logged = False
             logger.info(f'{self.LABEL} reset to opener for new combat')
 
     def current_beat(self):
@@ -314,15 +277,8 @@ class StrictRotation:
         # the scripted rotation off and let the reactive engine sustain the fight.
         if self.STOP_AFTER_FIRST_ROTATION and self.index == LOOP_START - 1:
             self._finished = True
-            # arm the ordered-reactive channel at the loop's first slot: the
-            # opener's final beat (sk_intro) outros exactly into aug_loop1, so
-            # the pointer starts aligned with the hand-off by construction.
-            self._order_index = 0
-            self._order_last_advance = time.time()
-            self._order_stalled_logged = False
-            logger.info(f'{self.LABEL}: 1st rotation (opener) complete -- scripted '
-                        f'beats off, ORDERED-REACTIVE channel takes over '
-                        f'(cycle {" -> ".join(LOOP_ORDER)})')
+            logger.info(f'{self.LABEL}: 1st rotation (opener) complete -- '
+                        f'turning off, reactive engine takes over')
         self.index += 1
         if self.index >= len(BEATS):
             self.index = LOOP_START
@@ -361,89 +317,6 @@ class StrictRotation:
         if not self.is_active():
             return NORMAL
         return MUST if self.current_beat().char == char_name else NO
-
-    # --- ordered-reactive channel (post-opener order enforcement) -----------
-    def ordering_active(self):
-        """Whether post-opener ORDER enforcement is on.
-
-        Requires the opener to have completed (this channel exists to make the
-        rotations AFTER the 1st one consistent), the ordered-reactive toggle,
-        the strict-rotation toggle, and the target trio. maybe_reset() keeps
-        ``_finished`` honest across combats, so a fresh fight still runs the
-        scripted opener first, exactly as before.
-        """
-        if not (self.STOP_AFTER_FIRST_ROTATION and self._finished):
-            return False
-        if not _config_flag(self.task, ORDERED_REACTIVE_CONFIG_KEY,
-                            ORDERED_REACTIVE_DEFAULT):
-            return False
-        return self.config_enabled() and self.team_matches()
-
-    def order_expected(self):
-        """Class name of the character the cycle expects on field next."""
-        return LOOP_ORDER[self._order_index % len(LOOP_ORDER)]
-
-    def _order_stalled(self):
-        """True when the pointer has not advanced within ORDER_STALL_TOLERANCE.
-
-        Degrades the channel to NORMAL priorities so an unavailable expected
-        character (dead, wedged switch CD) can never deadlock the fight. Any
-        real switch re-stamps the advance time via on_reactive_switch, so the
-        channel re-engages aligned with whoever actually just left.
-        """
-        stalled = (time.time() - self._order_last_advance) > ORDER_STALL_TOLERANCE
-        if stalled and not self._order_stalled_logged:
-            self._order_stalled_logged = True
-            logger.warning(
-                f'{self.LABEL} ordered-reactive: pointer stalled at '
-                f'{self.order_expected()} for >{ORDER_STALL_TOLERANCE:.0f}s; '
-                f'degrading to NORMAL priorities until a switch advances it')
-        return stalled
-
-    def order_priority_for(self, char_name):
-        """MUST/NO/NORMAL from the ordered-reactive channel.
-
-        NORMAL whenever the channel is off or stalled -- callers can consult it
-        unconditionally and fall through to their legacy rules / role-based
-        selection.
-        """
-        if not self.ordering_active() or self._order_stalled():
-            return NORMAL
-        if char_name not in LOOP_ORDER:
-            return NORMAL
-        return MUST if char_name == self.order_expected() else NO
-
-    def on_reactive_switch(self, char_name):
-        """Advance the order pointer on a REAL switch-out of ``char_name``.
-
-        Called from the characters' ``switch_out`` hooks: switch_out fires only
-        when the engine actually completed the switch, so a switch_next_char
-        call that ended WITHOUT switching (no valid target -> filler attack)
-        can never desync the pointer. A mismatched leaver realigns the pointer
-        to just past its nearest future slot (combat resumed off-cycle, death
-        recovery, manual input), mirroring resync()'s forward preference.
-        """
-        if not self.ordering_active():
-            return
-        n = len(LOOP_ORDER)
-        expected = self.order_expected()
-        if char_name == expected:
-            self._order_index = (self._order_index + 1) % n
-        else:
-            for offset in range(n):
-                if LOOP_ORDER[(self._order_index + offset) % n] == char_name:
-                    new_index = (self._order_index + offset + 1) % n
-                    logger.info(
-                        f'{self.LABEL} ordered-reactive realign: {char_name} '
-                        f'switched out while expecting {expected}; pointer '
-                        f'{self._order_index} -> {new_index}')
-                    self._order_index = new_index
-                    break
-            else:
-                return  # unknown char: leave the pointer alone
-        self._order_last_advance = time.time()
-        self._order_stalled_logged = False
-        logger.debug(f'{self.LABEL} ordered-reactive: next -> {self.order_expected()}')
 
     # --- driver ------------------------------------------------------------
     def run_current(self, char):

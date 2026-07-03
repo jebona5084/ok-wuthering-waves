@@ -27,8 +27,12 @@ class Augusta(BaseChar):
     # seen each buff once (cold start / partial wiring). Their tuned values also
     # seeded the tracker's DURATIONS table, so the mechanism swap does not retune
     # the rotation:
-    # - SK is S1: her buff lasts 40s (base 30s Stellarealm +10s from the
-    #   sequence). The old 29 was tuned before accounting for S1.
+    # - SK: ~30s of game time; a 25s window discarded a burst-ready Augusta
+    #   (0.95 con, lib2 lit) at ~27s elapsed while the buff was visibly still
+    #   active (log 02:16:37), and the rotation then ping-ponged as the two buff
+    #   windows never overlapped -> 29.
+    # ShoreKeeper is S1: her buff lasts 40s (base 30s Stellarealm +10s from the
+    # sequence). The old 29 was tuned before accounting for S1.
     SK_BUFF_WINDOW = 40
     # - Iuno: the engine's extended-intro FIELD window is 14s, but the buff
     #   itself outlasts it a little; 15s with margin. Her badge OCR stays a
@@ -65,37 +69,15 @@ class Augusta(BaseChar):
                 return SwitchPriority.MUST
             if priority == NO:
                 return SwitchPriority.NO
-        # Ordered-reactive channel (post-opener): the loop ORDER decides who is
-        # next, so every sustained cycle has the same shape -- Iuno is a fixed
-        # slot instead of only entering when an exit happened to be a plain
-        # swap. NORMAL means the channel is off/stalled: fall through to the
-        # legacy claims below, restoring the old behaviour exactly.
-        order = rot.order_priority_for(self.name)
-        if order == MUST:
-            return SwitchPriority.MUST
-        if order == NO:
-            return SwitchPriority.NO
-        # Legacy reactive claim (pre-order behaviour): Augusta CLAIMS
-        # ShoreKeeper's con-full outro, so SK's amp + recovery butterflies land
-        # directly on her for the burst. Under the ordered channel this rule
-        # never runs -- it would fight the cycle's Iuno slots (the mutual
-        # Augusta<->SK claims are exactly what starved Iuno and made the
-        # post-opener rotations inconsistent).
+        # Reactive phase (user request): Augusta CLAIMS ShoreKeeper's con-full
+        # outro, so SK's amp + recovery butterflies land directly on her for the
+        # burst. Iuno's outro also defaults to Augusta, and SK claims Augusta's
+        # con-full exit -- the cycle is Augusta -> SK -> Augusta with Iuno feeding
+        # in between.
         from src.char.ShoreKeeper import ShoreKeeper
         if has_intro and isinstance(current_char, ShoreKeeper):
             return SwitchPriority.MUST
         return super().get_switch_priority(current_char, has_intro, target_low_con)
-
-    def switch_out(self, con_full=False):
-        # ordered-reactive channel: a REAL completed switch advances the cycle
-        # pointer. switch_out only fires when the engine actually switched, so
-        # a switch_next_char that ended without a target can never desync it.
-        from src.combat.VariableRotation import get_active_rotation
-        try:
-            get_active_rotation(self.task).on_reactive_switch(self.name)
-        except Exception:
-            self.logger.debug('on_reactive_switch failed', exc_info=True)
-        return super().switch_out(con_full=con_full)
 
     def perform_beat(self, beat):
         """Execute one strict-rotation beat (see src/combat/StrictRotation.py)."""

@@ -20,33 +20,11 @@ class ShoreKeeper(BaseChar):
                 return SwitchPriority.MUST
             if priority == NO:
                 return SwitchPriority.NO
-        # Ordered-reactive channel (post-opener): the loop ORDER decides; SK's
-        # slot is the cycle end. NORMAL (off/stalled) falls through to her
-        # legacy claim below, restoring the old behaviour exactly.
-        order = rot.order_priority_for(self.name)
-        if order == MUST:
-            return SwitchPriority.MUST
-        if order == NO:
-            return SwitchPriority.NO
-        # Legacy reactive claim (pre-order behaviour): SK claims Augusta's
-        # con-full exit. Under the ordered channel this never runs -- the
-        # mutual Augusta<->SK claims are exactly the lock that starved Iuno
-        # and made the post-opener rotations inconsistent.
         self.decide_teammate()
         current_name = current_char.char_name if current_char else None
         if self.attribute == 2 and has_intro and current_name in {'Augusta', 'char_augusta'}:
             return SwitchPriority.MUST
         return super().get_switch_priority(current_char, has_intro, target_low_con)
-
-    def switch_out(self, con_full=False):
-        # ordered-reactive channel: a REAL completed switch advances the cycle
-        # pointer (no-op when the channel is off).
-        from src.combat.VariableRotation import get_active_rotation
-        try:
-            get_active_rotation(self.task).on_reactive_switch(self.name)
-        except Exception:
-            self.logger.debug('on_reactive_switch failed', exc_info=True)
-        return super().switch_out(con_full=con_full)
 
     def skip_combat_check(self):
         return self.has_intro or self.flying()

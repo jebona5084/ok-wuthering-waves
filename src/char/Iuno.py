@@ -44,26 +44,7 @@ class Iuno(BaseChar):
                 return SwitchPriority.MUST
             if priority == NO:
                 return SwitchPriority.NO
-        # Ordered-reactive channel (post-opener): Iuno holds FIXED slots in the
-        # cycle instead of only fielding when an exit happened to be a plain
-        # swap -- her amp reaching Augusta's burst is now by construction, not
-        # by accident. NORMAL (off/stalled) falls through as before.
-        order = rot.order_priority_for(self.name)
-        if order == MUST:
-            return SwitchPriority.MUST
-        if order == NO:
-            return SwitchPriority.NO
         return super().get_switch_priority(current_char, has_intro, target_low_con)
-
-    def switch_out(self, con_full=False):
-        # ordered-reactive channel: a REAL completed switch advances the cycle
-        # pointer (no-op when the channel is off).
-        from src.combat.VariableRotation import get_active_rotation
-        try:
-            get_active_rotation(self.task).on_reactive_switch(self.name)
-        except Exception:
-            self.logger.debug('on_reactive_switch failed', exc_info=True)
-        return super().switch_out(con_full=con_full)
 
     def perform_beat(self, beat):
         """Execute one strict-rotation beat (see src/combat/StrictRotation.py)."""
