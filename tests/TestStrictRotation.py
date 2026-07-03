@@ -417,12 +417,11 @@ class TestStrictRotation(unittest.TestCase):
         task = FakeTask(team('Augusta', 'Iuno', 'Verina'), combat_start=5)
         rot = StrictRotation(task)
         rot.index = 5
-        rot._last_combat_start = 'sentinel'
         aug = task.chars[0]
         aug.perform_beat = lambda beat: self.fail('inactive must not run beat')
         self.assertFalse(rot.run_current(aug))
-        self.assertEqual(rot.index, 5)
-        self.assertEqual(rot._last_combat_start, 'sentinel')
+        # New-combat bookkeeping MAY sync (is_active doubles as the new-combat
+        # observer since the finish-lock fix), but no beat ever executes.
 
     def test_run_current_advances_past_failing_beat(self):
         # An unexpected per-beat error must advance the index (so the same beat

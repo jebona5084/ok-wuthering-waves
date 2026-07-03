@@ -234,6 +234,17 @@ class StrictRotation:
             return self.DEFAULT_ENABLED
 
     def is_active(self):
+        # Observe new combats HERE, not only in run_current -- the finish-lock
+        # bug: once the opener completed (_finished), run_current returned
+        # False before its maybe_reset call, so _finished never cleared and no
+        # later battle ever got the opener (or the cross-battle state clear)
+        # again for the rest of the session (user: 'the rotation becomes
+        # unconsistent after the 1st battle. still happening'). is_active is
+        # consulted every engine cycle while in combat, so it both notices the
+        # new combat_start immediately and doubles as the combat HEARTBEAT the
+        # flicker check compares against.
+        self.maybe_reset()
+        self._last_seen = time.time()
         if self.STOP_AFTER_FIRST_ROTATION and self._finished:
             return False
         return self.config_enabled() and self.team_matches()
@@ -272,9 +283,14 @@ class StrictRotation:
     # boss animations/movement), which changes task.combat_start and would rewind
     # the whole rotation to the opener each time -- so the rotation never gets past
     # the opener. Only treat a combat_start change as a genuinely NEW combat when
-    # there has been a real gap since the last beat ran; a quick drop-and-reacquire
-    # within this many seconds keeps the current rotation position.
-    COMBAT_FLICKER_TOLERANCE = 20
+    # there has been a real gap in combat ACTIVITY (_last_seen is stamped on
+    # every is_active consult while the engine runs, so it tracks 'last moment
+    # in combat', not 'last scripted beat'); a drop-and-reacquire within this
+    # many seconds keeps the current rotation position. Real flickers measure
+    # 1-5s; distinct battles are >8s apart (kill confirm, loot, travel), so 8
+    # separates them where the old 20 misfiled quick back-to-back battles as
+    # flickers.
+    COMBAT_FLICKER_TOLERANCE = 8
 
     def maybe_reset(self):
         """Rewind to the opener on a genuinely fresh combat (not a brief flicker)."""
