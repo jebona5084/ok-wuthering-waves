@@ -427,6 +427,14 @@ class ShoreKeeper(BaseChar):
     OUTRO_RETRY_WINDOW = 15.0
 
     def switch_next_char(self, *args, **kwargs):
+        # Heavy before every switch-out (user: 'make sk do heavy attack before
+        # switching') -- extra concerto/damage, and the swap cancels the
+        # recovery. At full forte outside the opener, spend_forte fires the
+        # PROPER held Illation (settle + backoff bookkeeping); otherwise
+        # _heavy_unless_banked plays the plain heavy, downgrading to basics
+        # only when the 1st-rotation forte bank must not be broken.
+        if not self.spend_forte():
+            self._heavy_unless_banked()
         # Reactive-phase outro hardening (no-op while the scripted rotation
         # drives). Her outro buff is REQUIRED by the cycle -- Augusta must carry
         # it into her burst -- and 0.8s of plain basics barely moved her ring
