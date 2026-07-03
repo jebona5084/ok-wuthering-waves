@@ -921,18 +921,18 @@ class BaseCombatTask(CombatCheck):
     def is_con_full(self):
         """检查当前角色的协奏值是否已满。
 
-        Two independent channels, OR-ed:
-        1. the ring read (area + angular-arc geometry on the concerto ring), and
-        2. the portrait-side full-concerto marker template.
-        The ring read can FALSE-NEGATIVE when persistent field VFX (e.g. Iuno's
-        Full Moon Domain arcs) pollute the ring crop past the pollution/veto
-        bounds; the portrait marker sits far from combat VFX, so it rescues a
-        genuine full the ring channel had to distrust.
+        Ring read only. A portrait-marker template channel (con_full_* in the
+        char's con_mark box) was tried as a false-negative rescue and REMOVED:
+        log 835f001c showed it matching the element flourish in the char's slot
+        ~75ms after a swap-away (con actually 0.0) and NOT matching during a
+        genuine on-field full -- wrong in both directions. The real false
+        negatives were a stale con_full_size baseline, fixed in get_current_con
+        (clean-geometry fulls now override and heal the baseline).
 
         Returns:
             bool: 如果协奏值已满则返回 True, 否则 False。
         """
-        return self.get_current_con() == 1 or self.con_full_by_template()
+        return self.get_current_con() == 1
 
     def _ensure_ring_index(self):
         """确保当前角色协奏值环的颜色索引已识别。
@@ -997,16 +997,28 @@ class BaseCombatTask(CombatCheck):
         arc, outside = self.con_ring_metrics(cropped, ring_color)
         polluted = outside > CON_RING_POLLUTION_MAX
         if max_is_full and baseline > 0 and max_area > baseline * CON_FULL_MAX_RATIO:
-            # A ring area FAR above the calibrated full size is not a bigger ring,
-            # it is bright VFX flooding the ring box (e.g. the f-break burst read
-            # 2.22x while the ring was visibly half full). Trusting it forced a
-            # fake outro AND, worse, stamped the polluted area as the new full-size
-            # baseline, after which genuinely full rings read ~0.45 and the outro
-            # never fired again. Do not trust it and do not let it recalibrate.
-            self.logger.warning(
-                f'is_con_full area {max_area} is {max_area / baseline:.2f}x the calibrated '
-                f'full size -- VFX pollution, treating as not full')
-            max_is_full = False
+            # A ring area FAR above the calibrated full size is EITHER bright VFX
+            # flooding the ring box (the f-break burst read 2.22x while the ring
+            # was visibly half full) OR a stale/undersized baseline. The GEOMETRY
+            # tells them apart: a flash floods past the annulus (outside high),
+            # while a genuine full on a bad baseline is a clean contiguous ring
+            # (arc ~1.0, outside low). Log 835f001c froze on the second case:
+            # baseline ~0.5x reality made every genuine full read 2.1-2.2x, this
+            # guard rejected them all, and -- because rejected reads never
+            # re-stamp -- the baseline could never heal, killing every outro and
+            # Iuno's Absolute Fullness. So: clean geometry -> trust the ring and
+            # let the stamp below recalibrate; suspect geometry -> reject and do
+            # NOT let it poison the baseline.
+            if not polluted and arc >= CON_RING_COVERAGE_FULL:
+                self.logger.info(
+                    f'is_con_full area {max_area} is {max_area / baseline:.2f}x baseline but '
+                    f'geometry is a clean full ring (arc={arc:.2f} outside={outside:.2f}) -- '
+                    f'stale baseline, healing it')
+            else:
+                self.logger.warning(
+                    f'is_con_full area {max_area} is {max_area / baseline:.2f}x the calibrated '
+                    f'full size -- VFX pollution, treating as not full')
+                max_is_full = False
         if max_is_full and (polluted or arc < CON_RING_VETO_ARC):
             # count_rings says full, but the ring is visibly incomplete (arc) or
             # the frame is flooded (pollution) -- an area-based false positive
@@ -1026,10 +1038,14 @@ class BaseCombatTask(CombatCheck):
             # contour-convexity check in is_full_ring failing). That false negative
             # capped a genuinely full ring at 0.99, and since is_con_full requires
             # exactly 1 the outro never fired. Confirm fullness by the contiguous
-            # arc instead -- BOUNDED: only for a plausible area ratio and a clean
-            # (unpolluted) frame, since a flash lights every sector too.
-            if (percent <= CON_FULL_MAX_RATIO and not polluted
-                    and arc >= CON_RING_COVERAGE_FULL):
+            # arc instead -- gated on clean geometry only (unpolluted frame + a
+            # contiguous full arc), since a flash floods outside the annulus. No
+            # area-ratio bound here: a huge ratio with clean geometry is a stale
+            # baseline (log 835f001c: genuine fulls at 2.1x were stuck at 0.99
+            # forever), and the stamp below recalibrates it. Baseline poisoning is
+            # no longer sticky in either direction, because every clean-geometry
+            # full re-stamps.
+            if not polluted and arc >= CON_RING_COVERAGE_FULL:
                 self.logger.info(f'is_con_full confirmed full by angular arc ({percent:.2f})')
                 percent = 1
                 max_is_full = True
@@ -1193,29 +1209,6 @@ class BaseCombatTask(CombatCheck):
             self.logger.warning(f'is_con_full found multiple rings {ring_count}')
 
         return the_area, is_full
-
-    def con_full_by_template(self):
-        """Portrait-side full-concerto marker for the CURRENT character.
-
-        Mirrors the trusted ``update_lib_portrait_icon`` pattern: match the
-        element-specific ``con_full_*`` template (by the char's ring colour) in
-        the char's own ``con_mark_char_N`` portrait box. This area is far from
-        the on-field ring, so field VFX that pollute the ring crop (Iuno's Full
-        Moon Domain) cannot fake or hide it -- it is the rescue channel for
-        ring-read false negatives.
-
-        Returns:
-            bool: True if the marker confirms the current char's concerto full.
-        """
-        char = self.get_current_char()
-        if char is None or char.ring_index < 0:
-            return False
-        box = self.get_box_by_name('con_mark_char_{}'.format(char.index + 1))
-        match = self.find_one(con_full_templates[char.ring_index], box=box, threshold=0.8)
-        if match:
-            self.log_debug('con full by portrait template {} {}'.format(char, match))
-            return True
-        return False
 
     def update_lib_portrait_icon(self):
         # self.ensure_con_lib_boxes()
