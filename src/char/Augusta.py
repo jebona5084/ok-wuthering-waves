@@ -179,18 +179,27 @@ class Augusta(BaseChar):
         _build_majesty until the lib2 icon lights -- bounded by majesty_time_out,
         sized to fit inside her ~14s buffed dwell window. Returns True if the
         2nd lib was cast."""
-        if self.iuno_buff_stacks() < self.IUNO_BUFF_TARGET:
-            self.logger.info(f"Augusta: building Iuno's buff to {self.IUNO_BUFF_TARGET} "
-                             f"before the 2nd lib")
-            self.task.wait_until(
-                lambda: self.iuno_buff_stacks() >= self.IUNO_BUFF_TARGET,
-                post_action=self._build_majesty, time_out=4)
-        if self.task.wait_until(self.check_majesty, post_action=self._build_majesty,
+        # BOTH gates in one wait (user report: 'august did liberation at 7
+        # stacks' -- the old badge wait was bounded at 4s and then fell
+        # through, so the cast only truly required the lib2 icon, which can
+        # light well below 10 stacks). She now keeps building until the badge
+        # reads 10 AND the lib2 icon is lit, then holds the lib immediately
+        # (user: asap at 10 stacks -- no lead-in action).
+        def _majesty_ready():
+            return (self.check_majesty()
+                    and self.iuno_buff_stacks() >= self.IUNO_BUFF_TARGET)
+
+        if self.task.wait_until(_majesty_ready, post_action=self._build_majesty,
                                 time_out=majesty_time_out):
-            # Hold the lib the moment the lib2 icon confirms (user: 'when
-            # augusta reaches 10 stacks ... she should do it asap'). The
-            # Spinslash-2-then-ult chain that used to sit here delayed the
-            # hold by a full spinslash animation.
+            return self.perform_majesty()
+        # Timeout fallback: if the icon is lit but the badge never read 10
+        # (slow build or the badge OCR failing mid-animation), cast anyway --
+        # skipping the 2nd lib entirely wastes the whole buffed window, which
+        # is strictly worse than an under-stacked cast.
+        if self.check_majesty():
+            self.logger.info(f'Augusta: badge read '
+                             f'{self.iuno_buff_stacks()}/{self.IUNO_BUFF_TARGET} after '
+                             f'{majesty_time_out}s but lib2 is lit -- casting anyway')
             return self.perform_majesty()
         self.logger.info('Augusta: lib2 (majesty, 2 stacks) never lit within '
                          f'{majesty_time_out}s, skipping 2nd lib')
