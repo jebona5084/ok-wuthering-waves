@@ -187,10 +187,10 @@ class Augusta(BaseChar):
                 post_action=self._build_majesty, time_out=4)
         if self.task.wait_until(self.check_majesty, post_action=self._build_majesty,
                                 time_out=majesty_time_out):
-            # Spinslash 2 -> 2nd Ultimate: with the lib2 icon confirmed lit, fire
-            # the spinslash (its hit lands within the call) and chain the ult
-            # right after -- the ult is the kit's cancel for the spinslash endlag.
-            self._heavy_or_prowess()
+            # Hold the lib the moment the lib2 icon confirms (user: 'when
+            # augusta reaches 10 stacks ... she should do it asap'). The
+            # Spinslash-2-then-ult chain that used to sit here delayed the
+            # hold by a full spinslash animation.
             return self.perform_majesty()
         self.logger.info('Augusta: lib2 (majesty, 2 stacks) never lit within '
                          f'{majesty_time_out}s, skipping 2nd lib')
@@ -231,8 +231,9 @@ class Augusta(BaseChar):
             # buffed filler goes BEFORE the payoff -- nothing trails the 2nd ult.
             basic_attacks(self, 3, forte_check=self.check_prowess)  # ba123
         # 2nd Ultimate ("majesty"): build Iuno's buff to 10, keep rotating until
-        # the lib2 icon lights, then Spinslash 2 -> 2nd ult (the ult cancels the
-        # spinslash's endlag) -- see _build_and_cast_majesty.
+        # the lib2 icon lights, then HOLD the lib immediately (user: asap at 10
+        # stacks; the former Spinslash-2 lead-in delayed it) -- see
+        # _build_and_cast_majesty.
         self._build_and_cast_majesty()
         self.send_echo_key()                     # False Sovereign echo -- the outro
         #                                          swap right after is its cancel
