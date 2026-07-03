@@ -10,6 +10,7 @@ class ShoreKeeper(BaseChar):
         self.dodge_count = 0
         self.attribute = 0
         self._last_forte_spend = 0.0
+        self._outro_retry_until = 0.0
 
     def get_switch_priority(self, current_char=None, has_intro=False, target_low_con=False):
         from src.combat.VariableRotation import get_active_rotation
@@ -21,6 +22,12 @@ class ShoreKeeper(BaseChar):
                 return SwitchPriority.MUST
             if priority == NO:
                 return SwitchPriority.NO
+        # Armed comeback (user: 'switch out and then switch back until her
+        # outro is applied'): claim the field back so the near-full ring is
+        # verified/finished while it is still warm. Placed after the scripted
+        # block so the opener's ordering still wins while it drives.
+        if time.time() < self._outro_retry_until:
+            return SwitchPriority.MUST
         self.decide_teammate()
         current_name = current_char.char_name if current_char else None
         if self.attribute == 2 and has_intro and current_name in {'Augusta', 'char_augusta'}:
@@ -120,9 +127,37 @@ class ShoreKeeper(BaseChar):
             return
         self._do_perform_default()
 
+    def _finish_pending_outro(self):
+        """Comeback visit for a near-full exit (user: 'switch out and then
+        switch back until her outro is applied'). Re-reads the ring: consumed
+        -> the outro applied on the way out, nothing to do; still partial ->
+        finish it and leave via the outro. Returns True when this visit was
+        spent on the retry (caller should return)."""
+        from src.combat.StrictRotation import topoff_concerto, confirm_con_full
+        con = self.get_current_con()
+        if con < 0.05:
+            self.logger.info('ShoreKeeper: outro applied on the way out '
+                             '(ring consumed) -- retry cleared')
+            self._outro_retry_until = 0.0
+            return False
+        self.logger.info(f'ShoreKeeper: outro retry -- ring still {con:.2f}, '
+                         f'finishing it')
+        if (topoff_concerto(self, self.NEAR_FULL_FILL_BUDGET,
+                            allow_early_switch=False)
+                or confirm_con_full(self)):
+            self._outro_retry_until = 0.0
+            self.switch_next_char(free_intro=True)
+            return True
+        # not confirmed full yet -- keep the claim armed and try again next
+        # visit while the window lasts
+        return False
+
     def _do_perform_default(self):
         if self.has_intro:
             self._intro_wait()
+        if (time.time() < self._outro_retry_until
+                and self._finish_pending_outro()):
+            return
         # Liberation FIRST when it is ready: its team buff should be up at once,
         # not behind 2.2s of filler basics. Echo (instant, concerto) then lib.
         self.click_echo(time_out=0)
@@ -379,16 +414,17 @@ class ShoreKeeper(BaseChar):
         self.click_resonance()
         self.spend_forte()
 
-    # Never leave a near-full ring on the table: a swap-out with concerto in
-    # (0.7, 1.0) is one or two actions away from a full outro (user: 'if she
-    # switches to iuno and her concerto is less than 100 and greater than 70,
-    # switch back to sk and fill concerto'). Implemented PRE-swap -- the swap
-    # decision is intercepted right here and she stays to finish the ring; a
-    # literal post-swap switch-back is not observable from this layer (the
-    # outgoing ring is zeroed on swap and later reads target the incoming
-    # char), so pre-commit is the code-observable equivalent.
+    # A swap-out with concerto in (0.7, 1.0) must not waste the ring (user:
+    # 'she should switch out and then switch back until her outro is
+    # applied'). She LEAVES anyway -- if the ring was genuinely full and only
+    # misread, the outro fires on that very swap -- and arms a comeback claim
+    # (OUTRO_RETRY_WINDOW). On the return visit the ring is re-read: consumed
+    # -> the outro applied on the way out, done; still partial -> finish it
+    # and leave via the outro. The window bounds the ping-pong if the ring
+    # never confirms.
     NEAR_FULL_HOLD_MIN = 0.7
     NEAR_FULL_FILL_BUDGET = 6.0
+    OUTRO_RETRY_WINDOW = 15.0
 
     def switch_next_char(self, *args, **kwargs):
         # Reactive-phase outro hardening (no-op while the scripted rotation
@@ -405,15 +441,11 @@ class ShoreKeeper(BaseChar):
         self.logger.info(f'ShoreKeeper switch-out: concerto={con:.2f}')
         if (not kwargs.get('free_intro')
                 and self.NEAR_FULL_HOLD_MIN < con < 1.0):
-            from src.combat.StrictRotation import topoff_concerto, confirm_con_full
-            self.logger.info(f'ShoreKeeper: near-full ring ({con:.2f}) at '
-                             f'switch-out -- filling to 100 before leaving')
-            if (topoff_concerto(self, self.NEAR_FULL_FILL_BUDGET,
-                                allow_early_switch=False)
-                    or confirm_con_full(self)):
-                kwargs['free_intro'] = True  # leave via the outro, buff lands
-            self.logger.info(f'ShoreKeeper: near-full fill ended at '
-                             f'concerto={self.get_current_con():.2f}')
+            # leave now; if the ring was genuinely full the outro fires on
+            # this swap -- then come back and verify (see _finish_pending_outro)
+            self._outro_retry_until = time.time() + self.OUTRO_RETRY_WINDOW
+            self.logger.info(f'ShoreKeeper: leaving at {con:.2f} -- armed the '
+                             f'switch-back to finish the outro')
         tracker = get_buff_tracker(self.task)
         # Leaving the field ends any receiver-bound buff riding on her (Augusta's
         # outro amp) -- outro or plain swap alike, per the kit's 'expires on
