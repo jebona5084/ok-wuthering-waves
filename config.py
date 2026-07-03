@@ -72,6 +72,7 @@ char_config_option = ConfigOption('Character Config', {
     'Augusta Iuno SK Variable Rotation': False,
     'Augusta Iuno SK Aggressive Cancel': True,
     'Augusta Iuno SK Switch While Building': True,
+    'Augusta Iuno SK Ordered Reactive': True,
 }, description='Character Config', config_description={
     'Augusta Iuno SK Strict Rotation': 'Fixed quickswap rotation for the Augusta/Iuno/ShoreKeeper team',
     'Augusta Iuno SK Variable Rotation': 'Same rotation but characters can linger on field for '
@@ -84,6 +85,10 @@ char_config_option = ConfigOption('Character Config', {
                                              'possible (even below full, no outro buff) instead of holding '
                                              'to reach 100%. Turn off to always build to full for the outro. '
                                              'Only affects the reactive phase; the opener always builds to full.',
+    'Augusta Iuno SK Ordered Reactive': 'After the 1st rotation, enforce the loop order '
+                                        '(Augusta > Iuno > Augusta > Iuno > Augusta > SK) through switch '
+                                        'priorities while each character keeps its reactive actions. Turn '
+                                        'off for the legacy role/claim-based switching.',
 }, show_at_tab=True, icon=FluentIcon.PEOPLE)
 
 monthly_card_config_option = ConfigOption('Monthly Card Config', {
