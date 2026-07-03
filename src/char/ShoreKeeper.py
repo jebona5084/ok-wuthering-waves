@@ -78,29 +78,53 @@ class ShoreKeeper(BaseChar):
             # R2 enters on an enhanced intro handed over by Augusta's outro.
             self._intro_wait()
         if beat.name == 'sk_r1':
-            # First Rotation: ba x5, ha, skill, ba x5, ha, echo, outro.
-            # ShoreKeeper does not use her liberation in this rotation, and
-            # combat opens on her, so there is no intro to wait for here.
+            # First Rotation: ba x5, ha, skill, ba x3, lib, ba x2, ha, echo, outro.
+            # Combat opens on ShoreKeeper, so there is no intro to wait for here.
             basic_attacks(self, 5)
             heavy(self)
             self.click_resonance()
-            basic_attacks(self, 5)
+            basic_attacks(self, 3)
+            self._cast_liberation()
+            basic_attacks(self, 2)
             heavy(self)
             # Echo is ShoreKeeper's main concerto source (her basics generate
             # almost none); time_out=0 only fires when it is off cooldown.
             self.click_echo(time_out=0)
         elif beat.name == 'sk_r2':
-            # Second Rotation: enhanced intro, ba x5, ha, skill, ba x2 (the 2nd
-            # basic is cancelled by the outro swap). No liberation. Echo is held
+            # Second Rotation: enhanced intro, ba x3, lib, ba x2, ha, skill,
+            # ba x2 (the 2nd basic is cancelled by the outro swap). Echo is held
             # this beat on purpose so build_concerto can recast it to finish the
             # ring for the outro (basics alone barely build her concerto).
-            basic_attacks(self, 5)
+            basic_attacks(self, 3)
+            self._cast_liberation()
+            basic_attacks(self, 2)
             heavy(self)
             self.click_resonance()
             basic_attacks(self, 2)
         else:  # defensive: unknown beat
             self.click_echo(time_out=0)
             self.click_liberation()
+
+    def _cast_liberation(self, wait_ready=2.0):
+        """Cast liberation, tolerating a late gauge and dropped key presses.
+
+        A bare click_liberation() gives up silently when liberation_available()
+        reads False -- which happens whenever the gauge fills a beat late at
+        rotation speed, or the icon's highlight momentarily dims mid attack
+        string -- and its default fallback presses the key for only 0.1s, one
+        press that basic-attack recovery can eat. That made this step never
+        fire in practice. Wait briefly for the gauge to read ready, then give
+        the fallback a full second of presses; click_liberation itself confirms
+        the cast via the animation (not-in-team) check. Skips with a log when
+        the gauge is genuinely empty (e.g. a cold opener) so the beat degrades
+        to lost damage, never a hang.
+        """
+        if not self.liberation_available():
+            self.task.wait_until(self.liberation_available, time_out=wait_ready)
+        if self.click_liberation(wait_if_cd_ready=1):
+            return True
+        self.logger.info('ShoreKeeper liberation not ready, skipping')
+        return False
 
     def switch_next_char(self, *args, **kwargs):
         if self.is_con_full():
