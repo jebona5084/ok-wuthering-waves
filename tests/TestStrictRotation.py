@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 from src.combat.StrictRotation import (
     StrictRotation, BEATS, LOOP_START, TEAM, MUST, NO, NORMAL, get_strict_rotation,
-    try_spend_forte, basic_attacks,
+    try_spend_forte, basic_attacks, build_concerto,
 )
 
 
@@ -574,6 +574,36 @@ class TestForteSpending(unittest.TestCase):
         self.assertEqual(c.task.clicks, 3)
         self.assertEqual(c.heavy_calls, 0)
         self.assertTrue(c._full)  # forte left untouched (reserved, e.g. Iuno)
+
+    @staticmethod
+    def _builder_char(forte_full):
+        """_ForteChar + the no-op action surface build_concerto walks."""
+        c = _ForteChar(forte_full=forte_full)
+        c.liberation_available = lambda: False
+        c.echo_available = lambda: False
+        c.resonance_available = lambda: False
+        c.clicks = []
+        c.click = lambda: c.clicks.append(1)
+        return c
+
+    def test_build_concerto_spends_forte_via_spend_forte_override(self):
+        # A char that defines HOW to spend it (spend_forte override, e.g. SK's
+        # held Illation) banks a full forte during the outro top-off build
+        # instead of letting it sit wasted through the whole budget.
+        c = self._builder_char(forte_full=True)
+        c.spend_forte = lambda check=None: c.heavy_click_forte(check)
+        build_concerto(c)
+        self.assertEqual(c.heavy_calls, 1)
+        self.assertEqual(c.clicks, [])  # spent before falling through to basics
+
+    def test_build_concerto_leaves_forte_without_override(self):
+        # A char without the override keeps its forte (Iuno: reserved for her
+        # buffed special heavy) and falls through to a basic attack.
+        c = self._builder_char(forte_full=True)
+        build_concerto(c)
+        self.assertEqual(c.heavy_calls, 0)
+        self.assertTrue(c._full)
+        self.assertEqual(c.clicks, [1])
 
 
 if __name__ == '__main__':

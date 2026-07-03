@@ -175,6 +175,13 @@ class ShoreKeeper(BaseChar):
         percent = self.task.calculate_color_percentage(self.FORTE_GOLD, box)
         return percent > 0.12
 
+    def is_forte_full(self):
+        """Generic-name override so every generic forte site (try_spend_forte's
+        default check, build_concerto's spend during outro top-offs) sees HER
+        bar: the base white-glyph check reads ~0 on her GOLD blaze, which
+        silently disabled all those sites for her."""
+        return bool(self._forte_bar_glowing() or super().is_forte_full())
+
     def is_mouse_forte_full(self):
         """Template-first with colour fallbacks (user report: 'sk doesn't hold
         mouse click to spend forte when its full').
@@ -182,14 +189,11 @@ class ShoreKeeper(BaseChar):
         The mouse_forte TEMPLATE ships as a 1920-wide capture and upscales 2x
         blurrily on a 4K frame (FeatureSet load: original_width:1920,
         scale_x:2.0), where the 0.6-threshold match can chronically miss. The
-        GOLD-glow check is the fallback tuned to her actual full-bar rendering
-        (see _forte_bar_glowing); the generic white check stays as a third
-        channel. All read empty on an uncharged bar, so no false spends are
-        added (heavy_click_forte's hold also self-terminates if the gauge
-        check drops)."""
-        return bool(super().is_mouse_forte_full()
-                    or self._forte_bar_glowing()
-                    or self.is_forte_full())
+        colour channels (gold blaze + generic white via the is_forte_full
+        override above) back it up. All read empty on an uncharged bar, so no
+        false spends are added (heavy_click_forte's hold also self-terminates
+        if the gauge check drops)."""
+        return bool(super().is_mouse_forte_full() or self.is_forte_full())
 
     def spend_forte(self, check=None):
         """Illation (user request: 'if sk bar is full, hold mouse click and

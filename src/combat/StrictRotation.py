@@ -563,6 +563,15 @@ def build_concerto(char):
     """
     if char.liberation_available() and char.click_liberation(wait_if_cd_ready=0):
         return
+    # Forte/enhanced heavy next -- but only for chars that define HOW to spend
+    # it (a spend_forte override: ShoreKeeper's held Illation + dodge-cancel).
+    # For her it is one of the biggest concerto chunks, and without this a full
+    # bar sat wasted through the whole outro top-off (user: the 6s SK top-off
+    # 'is preventing sk from holding mouse click when forte is full'). Chars
+    # without the override are deliberately skipped: Iuno's forte is reserved
+    # for her buffed special heavy.
+    if getattr(char, 'spend_forte', None) is not None and try_spend_forte(char):
+        return
     if char.echo_available():
         char.click_echo(time_out=0)
         return
