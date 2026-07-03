@@ -223,6 +223,33 @@ class TestStrictRotation(unittest.TestCase):
         rot.maybe_reset()
         self.assertEqual(rot.index, 0)
 
+    def test_genuine_new_combat_clears_cross_battle_state(self):
+        # A GENUINE new combat wipes the buff tracker (stale stamps from the
+        # previous battle poisoned the next one's gates) and calls each char's
+        # optional on_rotation_new_combat hook; a brief flicker clears nothing.
+        import time
+        from src.combat.BuffTracker import get_buff_tracker, SK_LIBERATION
+        task = FakeTask(target_team(), combat_start=100)
+        hooked = []
+        task.chars[2].on_rotation_new_combat = lambda: hooked.append(1)
+        rot = StrictRotation(task)
+        rot.maybe_reset()
+        hooked.clear()  # the initial sync is itself a genuine new combat
+        tracker = get_buff_tracker(task)
+        # flicker: buffs and hooks untouched
+        tracker.apply(SK_LIBERATION, duration=40.0)
+        rot._last_seen = time.time()
+        task.combat_start = 150
+        rot.maybe_reset()
+        self.assertTrue(tracker.has(SK_LIBERATION))
+        self.assertEqual(hooked, [])
+        # genuine new combat: tracker cleared, hook called
+        rot._last_seen = time.time() - (rot.COMBAT_FLICKER_TOLERANCE + 5)
+        task.combat_start = 200
+        rot.maybe_reset()
+        self.assertFalse(tracker.has(SK_LIBERATION))
+        self.assertEqual(hooked, [1])
+
     def test_run_current_executes_and_advances(self):
         task = FakeTask(target_team())
         rot = StrictRotation(task)

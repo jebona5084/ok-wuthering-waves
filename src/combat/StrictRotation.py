@@ -289,7 +289,35 @@ class StrictRotation:
         else:
             self.index = 0
             self._finished = False  # new combat -> run the opener (1st rotation) again
+            self._notify_new_combat()
             logger.info(f'{self.LABEL} reset to opener for new combat')
+
+    def _notify_new_combat(self):
+        """Clear cross-battle coordination state on a GENUINE new combat.
+
+        None of the tracked in-game buffs survive a battle change (the
+        Stellarealm is anchored at the old battle's location, the amps died at
+        the last swap, the domain despawned), yet their stamps read up to 40s
+        'remaining' into the next battle -- so SK's field-time economy ceded
+        visits, Augusta's burst gate thought she was buffed, and the bank
+        windows misfired (user: 'the rotation becomes unconsistent after the
+        1st battle'). Characters expose an optional duck-typed
+        ``on_rotation_new_combat`` for their own volatile windows (SK's outro
+        retry claim / forte backoff). Detection FLICKERS never reach here --
+        the ``brief`` branch above keeps everything."""
+        try:
+            from src.combat.BuffTracker import get_buff_tracker
+            get_buff_tracker(self.task).clear()
+        except Exception:  # never break the rotation on cleanup
+            logger.debug('buff tracker clear on new combat failed', exc_info=True)
+        for char in (getattr(self.task, 'chars', None) or []):
+            hook = getattr(char, 'on_rotation_new_combat', None)
+            if hook is None:
+                continue
+            try:
+                hook()
+            except Exception:
+                logger.debug('on_rotation_new_combat failed', exc_info=True)
 
     def current_beat(self):
         return BEATS[self.index]

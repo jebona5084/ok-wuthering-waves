@@ -87,6 +87,16 @@ class ShoreKeeper(BaseChar):
     def skip_combat_check(self):
         return self.has_intro or self.flying()
 
+    def on_rotation_new_combat(self):
+        """Clear her volatile cross-battle windows on a genuine new combat
+        (called by the rotation's new-combat reset): a 15s outro-retry claim or
+        a 4s forte backoff armed at the end of one battle must not leak into
+        the next one's opener."""
+        self._outro_retry_until = 0.0
+        self._last_forte_spend = 0.0
+        self.outrotime = -1
+        self.dodge_count = 0
+
     def _cast_liberation_now(self):
         """Cast her Resonance Liberation the instant it is ready, so the team buff
         it applies goes up immediately -- she was delaying it behind filler basics

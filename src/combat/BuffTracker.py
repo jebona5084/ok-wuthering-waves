@@ -118,6 +118,15 @@ class BuffTracker:
     def __init__(self):
         self._buffs = {}
 
+    def clear(self):
+        """Forget every stamped buff. Called on a GENUINE new combat (not a
+        detection flicker -- see StrictRotation.maybe_reset): in game, none of
+        these buffs survive a battle change (the Stellarealm is anchored at
+        the old battle's location, the amps died at the last swap, the domain
+        despawned), so stale stamps must not poison the new battle's gates
+        (user: 'the rotation becomes unconsistent after the 1st battle')."""
+        self._buffs.clear()
+
     # --- stamping ------------------------------------------------------
     def apply(self, name, source=None, duration=None):
         """Stamp ``name`` as (re)applied NOW; returns the duration used.

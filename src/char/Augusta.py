@@ -135,6 +135,13 @@ class Augusta(BaseChar):
         else:
             heavy(self, cancel=cancel)
 
+    def on_rotation_new_combat(self):
+        """Clear the majesty hold-wait on a genuine new combat (called by the
+        rotation's new-combat reset). The liberation-cd anchor is deliberately
+        KEPT: the in-game cooldown keeps ticking between battles, so the
+        anchor stays truthful."""
+        self._majesty_wait_start = -1.0
+
     def iuno_buff_stacks(self):
         """OCR Iuno's buff-stack badge on Augusta (0 if no digit / can't be read).
 
