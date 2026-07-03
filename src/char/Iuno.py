@@ -97,6 +97,63 @@ class Iuno(BaseChar):
         self.sleep(self.SPECIAL_HEAVY_HOLD)
         self.task.mouse_up()
 
+    def _try_absolute_fullness(self):
+        """Hold-fire Absolute Fullness if its full gate passes; True when held.
+
+        Gate: off its own ~20s cooldown, the iuno_heavy prompt visible, and
+        CONFIRMED full concerto (double-read -- her own Full Moon Domain sweeps
+        ring-coloured arcs through the concerto box, and a fake full here would
+        burn the 20s cooldown for no buff). The prompt also requires an Arc
+        CHARGE (user-verified: 'iuno didn't heavy attack because her skill was
+        on cooldown'), which is why callers care about WHEN they try this
+        relative to Arc casts."""
+        from src.combat.StrictRotation import confirm_con_full
+        if self.time_elapsed_accounting_for_freeze(self.last_heavy) <= 20:
+            return False
+        if not self.task.find_feature("iuno_heavy", box="box_extra_action",
+                                      threshold=0.55):
+            return False
+        if not confirm_con_full(self):
+            return False
+        self._hold_special_heavy()
+        self.last_heavy = time.time()
+        # Full Moon Domain is up: fixed 30s field timer that persists off-field.
+        from src.combat.BuffTracker import get_buff_tracker, IUNO_DOMAIN
+        get_buff_tracker(self.task).apply(IUNO_DOMAIN, source=self)
+        self.logger.info('Iuno: Absolute Fullness held at 100 concerto')
+        return True
+
+    # Longest the exit gate will wait for an Arc charge to come back so the
+    # heavy prompt returns; the actual wait is bounded by the CD read, this cap
+    # only protects against a misread CD stalling the rotation.
+    HEAVY_PROMPT_WAIT_MAX = 9.0
+
+    def _wait_for_heavy_prompt(self, max_wait=HEAVY_PROMPT_WAIT_MAX):
+        """Wait out the Arc recharge until the Absolute Fullness prompt returns.
+
+        The AF prompt needs an Arc charge; the burst force-casts BOTH charges,
+        so at the full-concerto exit the prompt is gone for the tail of the
+        ~8.6s recharge (video 678adb85: cd read 8.1 at the exit, AF silently
+        skipped, Augusta's badge stayed 0). The buff is cycle-critical, so when
+        AF is due and only the charge is missing, waiting the recharge out is
+        cheaper than losing the amp for a whole 20s+ cycle. Bounded by the
+        actual CD read (+grace) and MAX; fills the wait with plain clicks
+        (normal attacks -- the ring is already full, nothing is wasted)."""
+        cd = 0.0
+        try:
+            cd = max(0.0, float(self.task.get_cd('resonance')))
+        except Exception:
+            self.logger.debug('Iuno: resonance cd read failed', exc_info=True)
+        # cd==0 with the prompt missing is a transient (cd OCR miss / prompt
+        # redraw): give it a short grace instead of the full cap.
+        wait = min(cd + 0.8, max_wait) if cd > 0 else 1.0
+        self.logger.info(f'Iuno: heavy prompt missing (Arc recharging, cd~{cd:.1f}s); '
+                         f'waiting up to {wait:.1f}s for the charge')
+        return self.task.wait_until(
+            lambda: self.task.find_feature("iuno_heavy", box="box_extra_action",
+                                           threshold=0.55),
+            post_action=self.click, time_out=wait)
+
     def _iuno_burst(self):
         """Burst per Iuno's kit contract (user-verified):
 
@@ -126,6 +183,13 @@ class Iuno(BaseChar):
         # come up; a genuinely unready lib no-ops and the rotation continues.
         self.click_liberation(wait_if_cd_ready=0.5)
         basic_attacks(self, 4)                            # Moonbow string
+        # Absolute Fullness needs an Arc CHARGE (user-verified: skipped when
+        # 'her skill was on cooldown') -- and the forced Arc #2 below spends the
+        # LAST one, locking AF for the ~8.6s recharge exactly when the exit
+        # wants to fire it (video 678adb85). If the Moonbow string already
+        # filled the ring, hold AF NOW while charge #2 is still in hand; the
+        # exit gate remains the fallback (it waits out the recharge).
+        self._try_absolute_fullness()
         # Arc #2 -> buff 2, the finisher. A 2-charge skill shows a RECHARGE
         # cooldown right after charge 1, so resonance_available() false-negatives
         # and a gated cast skipped it on 18 of 19 bursts -- FORCE the cast with a
@@ -210,8 +274,7 @@ class Iuno(BaseChar):
         # as many exits as possible into outros.
         from src.combat.VariableRotation import reactive_outro_topoff
         from src.combat.StrictRotation import confirm_con_full
-        from src.combat.BuffTracker import (get_buff_tracker, IUNO_OUTRO,
-                                            IUNO_DOMAIN)
+        from src.combat.BuffTracker import get_buff_tracker, IUNO_OUTRO
         reactive_outro_topoff(self, kwargs, threshold=0.6, aggressive=True,
                               mandatory=True)
         tracker = get_buff_tracker(self.task)
@@ -223,16 +286,18 @@ class Iuno(BaseChar):
         # fake here would burn Absolute Fullness's 20s cooldown for no buff.
         will_outro = bool(kwargs.get('free_intro')) or confirm_con_full(self)
         if (will_outro
-                and self.time_elapsed_accounting_for_freeze(self.last_heavy) > 20
-                and self.task.find_feature("iuno_heavy", box="box_extra_action",
-                                           threshold=0.55)):
-            self._hold_special_heavy()
-            self.last_heavy = time.time()
-            tracker.apply(IUNO_DOMAIN, source=self)  # 30s field, persists off-field
-            # NO settle: the outro swap is emitted DURING Absolute Fullness --
-            # it completes and its buff transfers regardless (kit contract).
-            self.logger.info('Iuno: Absolute Fullness held at 100 concerto; '
-                             'outroing during it')
+                and self.time_elapsed_accounting_for_freeze(self.last_heavy) > 20):
+            if not self.task.find_feature("iuno_heavy", box="box_extra_action",
+                                          threshold=0.55):
+                # AF is due on a full ring but its prompt is gone -- the Arc
+                # recharge is the usual culprit (the burst spends both charges).
+                # Wait it out rather than silently losing the amp.
+                self._wait_for_heavy_prompt()
+            if self._try_absolute_fullness():
+                # NO settle: the outro swap is emitted DURING Absolute Fullness
+                # -- it completes and its buff transfers regardless (kit
+                # contract). (last_heavy + domain stamp handled in the helper.)
+                self.logger.info('Iuno: outroing during Absolute Fullness')
         # She is never a bound receiver today, so this is a no-op safety net --
         # but keep the swap-out hook symmetric across the team.
         tracker.on_char_switch_out(self.char_name)
