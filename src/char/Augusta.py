@@ -13,12 +13,13 @@ switch_time = 3
 class Augusta(BaseChar):
     # Griffin (Enhanced Resonance Skill) is a 3-hit combo; it builds Majesty energy.
     ENHANCED_SKILL_COUNT = 3
-    # The 2nd liberation icon (check_majesty) lights early (~7 Majesty), but the
-    # empowered hit is strongest at max -- so hold until the Majesty badge reads
-    # >= TARGET before casting. Badge digit box in 3840x2160 ref px (pinned from an
-    # in-game hover at normalized (0.501, 0.840)); widened left so "10" fits.
-    AUGUSTA_MAJESTY_BOX = (1886, 1789, 1950, 1839)
-    AUGUSTA_MAJESTY_TARGET = 10
+    # The 10-count badge is IUNO'S BUFF on Augusta (climbs 1..10 during her
+    # buffed window) -- NOT Majesty. Majesty is a separate resource (2 stacks)
+    # that lights the 2nd-liberation icon (check_majesty / Augusta_lib2). Badge
+    # digit box in 3840x2160 ref px (pinned from an in-game hover at normalized
+    # (0.501, 0.840)); widened left so "10" fits.
+    IUNO_BUFF_BOX = (1886, 1789, 1950, 1839)
+    IUNO_BUFF_TARGET = 10
 
     def do_perform(self):
         from src.combat.VariableRotation import get_active_rotation
@@ -77,8 +78,8 @@ class Augusta(BaseChar):
         else:
             heavy(self, cancel=cancel)
 
-    def majesty_stacks(self):
-        """OCR the Majesty badge count (0 if no digit / can't be read).
+    def iuno_buff_stacks(self):
+        """OCR Iuno's buff-stack badge on Augusta (0 if no digit / can't be read).
 
         The digit is white on the badge, so isolate white text first (blacks out
         the icon/fill and leaves the number). At the lowest the badge shows no
@@ -86,7 +87,7 @@ class Augusta(BaseChar):
         """
         from src.task.BaseWWTask import isolate_white_text_to_black
         box = self.task.box_of_screen_scaled(
-            3840, 2160, *self.AUGUSTA_MAJESTY_BOX, name='augusta_majesty', hcenter=True)
+            3840, 2160, *self.IUNO_BUFF_BOX, name='iuno_buff', hcenter=True)
         self.task.draw_boxes(box.name, box)
         stacks = 0
         for t in self.task.ocr(box=box, match=re.compile(r'\d+'),
@@ -95,7 +96,7 @@ class Augusta(BaseChar):
                 stacks = max(stacks, int(re.sub(r'\D', '', t.name)))
             except (ValueError, TypeError):
                 continue
-        self.logger.debug(f'Augusta majesty_stacks = {stacks}')
+        self.logger.debug(f'Augusta iuno_buff_stacks = {stacks}')
         return stacks
 
     def _build_majesty(self):
@@ -114,25 +115,29 @@ class Augusta(BaseChar):
             return
         self.click()
 
-    def _build_and_cast_majesty(self):
-        """Build Majesty to >= TARGET (attacking to build while we wait), then
-        cast the 2nd liberation once its icon (check_majesty) is lit.
+    def _build_and_cast_majesty(self, majesty_time_out=12):
+        """Build Iuno's buff to max, then KEEP ROTATING on field until the 2nd
+        liberation (Majesty, 2 stacks -> Augusta_lib2 icon) is ready, then cast.
 
-        Shared by the scripted burst AND the reactive default so Augusta reaches
-        MAX stacks in both phases. After the 1st rotation the strict rotation
-        turns off and the reactive engine drives her; without this it fired the
-        2nd lib the instant the icon lit (~7 stacks) instead of at max, so she
-        never reached 10. Bounded so a stuck read cannot stall. Returns True if
-        the 2nd lib was cast."""
-        if self.majesty_stacks() < self.AUGUSTA_MAJESTY_TARGET:
-            self.logger.info(f'Augusta: building Majesty to {self.AUGUSTA_MAJESTY_TARGET} '
-                             f'before the 2nd lib')
+        The 10-count badge is IUNO'S BUFF -- it maxing does not mean the 2nd lib
+        is ready, because Majesty is its own resource. Previously this polled
+        check_majesty passively for only 1.5s after the badge hit 10 and then
+        SKIPPED the 2nd lib and switched out, wasting the fully-buffed window.
+        Now she stays and keeps building (enhanced skill / prowess / basics) via
+        _build_majesty until the lib2 icon lights -- bounded by majesty_time_out,
+        sized to fit inside her ~14s buffed dwell window. Returns True if the
+        2nd lib was cast."""
+        if self.iuno_buff_stacks() < self.IUNO_BUFF_TARGET:
+            self.logger.info(f"Augusta: building Iuno's buff to {self.IUNO_BUFF_TARGET} "
+                             f"before the 2nd lib")
             self.task.wait_until(
-                lambda: self.majesty_stacks() >= self.AUGUSTA_MAJESTY_TARGET,
+                lambda: self.iuno_buff_stacks() >= self.IUNO_BUFF_TARGET,
                 post_action=self._build_majesty, time_out=4)
-        if self.task.wait_until(self.check_majesty, time_out=1.5):
+        if self.task.wait_until(self.check_majesty, post_action=self._build_majesty,
+                                time_out=majesty_time_out):
             return self.perform_majesty()
-        self.logger.info('Augusta: lib2 (majesty) icon not lit, skipping 2nd lib')
+        self.logger.info('Augusta: lib2 (majesty, 2 stacks) never lit within '
+                         f'{majesty_time_out}s, skipping 2nd lib')
         return False
 
     def _augusta_burst(self, with_basics):
@@ -158,10 +163,11 @@ class Augusta(BaseChar):
         # the 2nd-liberation icon (Augusta_lib2).
         for _ in range(self.ENHANCED_SKILL_COUNT):
             self.click_resonance()               # griffin hit (x3)
-        # 2nd Resonance Liberation ("majesty"): the lib2 icon lights early (~7
-        # Majesty), but the empowered hit is strongest at max -- so HOLD until the
-        # Majesty badge reads >= TARGET (keep attacking to build it), then cast.
-        self._build_and_cast_majesty()           # 2nd lib at max stacks
+        # 2nd Resonance Liberation ("majesty"): needs 2 Majesty stacks (lights the
+        # lib2 icon). Build Iuno's buff to 10, then STAY and keep rotating until
+        # the icon lights -- do not give up and switch out with the buff window
+        # still live (see _build_and_cast_majesty).
+        self._build_and_cast_majesty()           # 2nd lib once Majesty is ready
         # ha and the trailing basics are mid-sequence melee filler -- jump-cancel
         # their (long) recovery when aggressive cancel is on to cut station time.
         self._heavy_or_prowess(cancel=agg)       # ha
