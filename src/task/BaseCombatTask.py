@@ -1,12 +1,9 @@
 import re
 import time
-from decimal import Decimal, ROUND_UP, ROUND_DOWN
 
-import cv2
 import numpy as np
 
-from ok import Box, Logger, Config
-from ok import color_range_to_bound
+from ok import Box, Logger
 from ok import safe_get
 from src import text_white_color
 from src.char import BaseChar
@@ -41,43 +38,93 @@ mismatched_names = {
     "HavocRover": "Rover: Havoc"
 }
 
-# Maximum plausible ratio of a concerto-ring area read to the calibrated full
-# size. A genuinely full ring reads ~1.0x (the angular rescue exists for the
-# 0.99-cap false negative just under it). Ratios far above mean bright VFX
-# flooded the ring box -- e.g. an f-break burst read 2.22x while the ring was
-# visibly half full -- and such reads must be rejected, not trusted or used to
-# recalibrate the baseline.
-CON_FULL_MAX_RATIO = 1.2
+# =============================================================================
+# Concerto ring reading -- REWORKED.
+#
+# The old reader ran two channels and a tower of patches on top: a pixel-AREA
+# channel (count_rings: color mask -> connected components -> a contour
+# convexity test for "full", with percent = area / a PERSISTED per-element
+# baseline) corrected by an angular PRESENCE channel (>=1 matched pixel lights
+# a sector). It was wrong most of the time because both channels were built on
+# sand:
+# - the convexity "full ring" test false-positives on ~97% rings (approxPolyDP
+#   erases a small gap) and false-negatives on genuine fulls split into two
+#   components by a notch/VFX shadow -- and the multi-component path then
+#   ZEROED the area, so a nearly-full ring could read 0.0;
+# - the persisted baseline (per ELEMENT, shared across characters, sessions and
+#   resolutions) drifted and poisoned every percent derived from it -- the
+#   CON_FULL_MAX_RATIO / "healing" / 0.99-cap / arc-rescue patches all existed
+#   to fight that one bad idea;
+# - presence-based sectors let a single VFX pixel light a bin (fake arcs) while
+#   an anti-aliased dim sector with 0 in-range pixels broke a genuine arc.
+#
+# The rework makes the GEOMETRY the one and only measurement:
+# - per-sector DENSITY over the annulus band (fraction of band pixels that are
+#   ring-coloured), so speckle cannot light a sector and AA dimming cannot
+#   darken one; the ring fills as one contiguous arc, so the longest lit run IS
+#   the concerto fraction -- no baseline, nothing to calibrate or poison;
+# - a near-white BRIGHT mask unioned into sector density (inside the band
+#   only): the full-ring glow / bloom pushes pixels out of the element colour
+#   range, which used to blind the reader (video 048ca5ff: a ~0.6 ring read
+#   0.0 for ~3s under flashes);
+# - FULL = total lit coverage >= CON_RING_COVERAGE_FULL with the largest gap
+#   <= CON_FULL_MAX_GAP_SECTORS, confirmed on TWO different frames within
+#   CON_FULL_CONFIRM_WINDOW whose lit-sector signatures MATCH -- a moving
+#   field sweep (SK's Stellarealm) cannot hold the same bridged sectors across
+#   two frames, a static full ring trivially can;
+# - frames are declared UNTRUSTED (and the last trusted value held, bounded by
+#   CON_HOLD_MAX_AGE) on pollution (element-coloured pixels flooding outside
+#   the annulus), on a white flash covering the portrait core, or on a
+#   whiteout (bright frame with the element mask starved).
+# =============================================================================
 
-# Concerto-ring angular analysis (see con_ring_metrics):
-# - a full ring must cover this fraction of the circle as ONE CONTIGUOUS arc
-CON_RING_COVERAGE_FULL = 0.93
-# - an area-based "full" is VETOED when the contiguous arc is below this (the
-#   ring is visibly incomplete no matter what the pixel count says)
-CON_RING_VETO_ARC = 0.90
-# - the frame is treated as VFX-POLLUTED when more than this fraction of the
-#   ring-coloured pixels sit OUTSIDE the annulus band; a real ring concentrates
-#   its pixels inside the band (measured 0.11-0.20 on genuine full reads), a
-#   screen flash or Iuno's Full Moon Domain arcs flood the crop. 0.5 let the
-#   domain arcs fake a full ring; 0.35 still clears every genuine read by ~2x.
+# Annulus band of the concerto ring inside the con_full crop, as fractions of
+# the crop height (calibrated for the (1431,1942)-(1557,2068) box at 4K; the
+# crop scales with resolution so the fractions hold).
+CON_RING_R_INNER = 0.35119
+CON_RING_R_OUTER = 0.42261
+# Angular resolution. 72 sectors = 5 degrees each; at 1080p the band holds
+# ~9-12 pixels per sector, enough for a meaningful density.
+CON_RING_SECTORS = 72
+# A sector is LIT when at least this fraction of its band pixels are
+# ring-coloured (and at least CON_SECTOR_MIN_PIXELS absolute, so a 1-2 pixel
+# speckle can never light a sector at 4K where sectors are ~45 px).
+CON_SECTOR_DENSITY_LIT = 0.15
+CON_SECTOR_MIN_PIXELS = 2
+# FULL geometry: total lit coverage AND bounded largest gap. Coverage alone
+# would pass a 95% ring; the gap bound (2 sectors = 10 degrees) is what
+# separates "full with an anchor notch / AA dropout" from "visibly not done".
+CON_RING_COVERAGE_FULL = 0.95
+CON_FULL_MAX_GAP_SECTORS = 2
+# The frame is VFX-POLLUTED when more than this fraction of the ELEMENT-
+# coloured pixels sit outside the annulus band; a real ring concentrates its
+# pixels inside the band (measured 0.11-0.20 on genuine full reads), a screen
+# flash or Iuno's Full Moon Domain arcs flood the crop. 0.5 let the domain
+# arcs fake a full ring; 0.35 still clears every genuine read by ~2x.
 CON_RING_POLLUTION_MAX = 0.35
-# - partial reads: when the clean-frame arc and the calibrated-area percent
-#   disagree by more than this, trust the arc (a stale/poisoned baseline skews
-#   the area percent; the arc needs no calibration)
-CON_RING_DISAGREE = 0.2
-# The arc-ONLY full promotion (clean geometry, area channel disagreeing) needs
-# two full sightings this close together: one frame of a ring-coloured field
-# sweep bridging the gap sectors must not fake a full. Read cadence during
-# top-offs is 0.05-0.3s, and the engine's almost-full path re-reads after
-# 0.05s, so a genuine full confirms within one extra read.
-ARC_FULL_STREAK_WINDOW = 0.6
-# The decorated star-overlay ring (closed circle + blazing star sigil; user
-# screenshots: reads arc=1.00 clean while concerto is NOT full -- genuine full
-# is a PLAIN closed ring) renders at ~2.15-2.25x the plain ring's pixel area.
-# Any full-shaped read above this multiple of the measured full-area anchor is
-# that state, treated as a BLIND frame (hold last trusted value). 1.5 splits
-# the two populations (1.0x vs 2.15x+) with wide margins on both sides.
-CON_STAR_RING_RATIO = 1.5
+# Near-white floor for the bright/glow mask (all three channels >= this).
+CON_BRIGHT_RING_FLOOR = 220
+# A white FLASH covers the portrait core, a ring glow does not: when more than
+# this fraction of the core disc is bright, the bright mask is meaningless and
+# the frame is untrusted.
+CON_BRIGHT_CORE_FLASH = 0.30
+# WHITEOUT (video 048ca5ff): a bright flash blooms the ring right out of its
+# colour range so almost nothing matches, and the read is garbage-LOW. Bright
+# band + starved element mask -> untrusted, hold the last trusted value.
+CON_WHITEOUT_BRIGHTNESS = 190
+CON_WHITEOUT_MAX_ELEMENT_LIT = 0.20
+# The two full sightings must land on different frames this close together.
+# Read cadence during top-offs is 0.05-0.3s and the engine's almost-full path
+# re-reads after 0.05s, so a genuine full confirms within one extra read.
+CON_FULL_CONFIRM_WINDOW = 0.6
+# The two sightings' lit-sector signatures must agree on at least this
+# fraction of sectors: a sweep bridging the gap moves between frames, a full
+# ring is static.
+CON_FULL_SIGNATURE_MATCH = 0.95
+# On untrusted frames the last trusted value is held at most this long; past
+# it, fall back to the raw (capped) reading so a chronic misclassification can
+# never freeze the value forever.
+CON_HOLD_MAX_AGE = 2.5
 
 
 def _largest_arc_run(covered):
@@ -103,20 +150,229 @@ def _largest_arc_run(covered):
     return max_run
 
 
+def _largest_gap_run(covered):
+    """Longest contiguous run of UNCOVERED sectors (0 when fully covered)."""
+    if not covered:
+        return 0
+    return _largest_arc_run([not c for c in covered])
+
+
+def _color_range_to_bgr_bounds(color_range):
+    """{'r': (lo,hi), 'g': ..., 'b': ...} -> (lower, upper) BGR uint8 arrays.
+
+    Mirrors ok.color_range_to_bound's convention (frames are BGR); kept local so
+    the pure ring analysis below is testable without the game stack.
+    """
+    lower = np.array([color_range['b'][0], color_range['g'][0], color_range['r'][0]],
+                     dtype=np.uint8)
+    upper = np.array([color_range['b'][1], color_range['g'][1], color_range['r'][1]],
+                     dtype=np.uint8)
+    return lower, upper
+
+
+_con_geometry_cache = {}
+
+
+def _con_geometry(h, w):
+    """Precomputed annulus/core masks and sector bins for a crop size.
+
+    Cached per (h, w): the crop size is constant per resolution, and the
+    reader runs every frame in top-off loops.
+    """
+    key = (h, w)
+    cached = _con_geometry_cache.get(key)
+    if cached is not None:
+        return cached
+    cy, cx = (h - 1) / 2.0, (w - 1) / 2.0
+    yy, xx = np.mgrid[0:h, 0:w]
+    dy = yy - cy
+    dx = xx - cx
+    dist = np.sqrt(dx * dx + dy * dy)
+    in_band = (dist >= h * CON_RING_R_INNER) & (dist <= h * CON_RING_R_OUTER)
+    core = dist < h * CON_RING_R_INNER * 0.8
+    bins = ((np.arctan2(dy, dx) + np.pi) / (2 * np.pi) * CON_RING_SECTORS
+            ).astype(np.int64) % CON_RING_SECTORS
+    band_bins = bins[in_band]
+    band_per_sector = np.bincount(band_bins, minlength=CON_RING_SECTORS)
+    cached = (in_band, core, bins, band_bins, band_per_sector)
+    _con_geometry_cache[key] = cached
+    if len(_con_geometry_cache) > 8:  # defensive: never grow unbounded
+        _con_geometry_cache.pop(next(iter(_con_geometry_cache)))
+    return cached
+
+
+def con_ring_profile(cropped, lower, upper):
+    """Pure frame analysis of the concerto ring crop. THE measurement.
+
+    Args:
+        cropped: BGR crop of the con_full box.
+        lower/upper: BGR bounds of the element's ring colour.
+
+    Returns a dict:
+        lit:          per-sector booleans (element-or-bright density lit)
+        total_lit:    fraction of sectors lit
+        largest_run:  longest contiguous lit arc, as a fraction (== the
+                      geometric concerto fill for a partial ring)
+        max_gap:      longest contiguous unlit run, in SECTORS
+        element_lit_total: fraction of sectors lit by the ELEMENT mask alone
+                      (bright excluded) -- the whiteout detector's input
+        pollution:    fraction of element-coloured pixels OUTSIDE the band
+                      (0.0 when the element mask is starved: no evidence is
+                      not evidence of flooding)
+        brightness:   mean grayscale of the band
+        bright_core:  fraction of the core disc that is near-white (flash tell)
+    """
+    h, w = cropped.shape[:2]
+    in_band, core, bins, band_bins, band_per_sector = _con_geometry(h, w)
+
+    element = np.all((cropped >= lower) & (cropped <= upper), axis=2)
+    bright = np.all(cropped >= CON_BRIGHT_RING_FLOOR, axis=2)
+
+    element_total = int(np.count_nonzero(element))
+    element_in_band = int(np.count_nonzero(element & in_band))
+    pollution = (1.0 - element_in_band / element_total) if element_total >= 8 else 0.0
+
+    core_px = int(np.count_nonzero(core))
+    bright_core = (int(np.count_nonzero(bright & core)) / core_px) if core_px else 0.0
+
+    union_band = (element | bright) & in_band
+    lit_per_sector = np.bincount(bins[union_band], minlength=CON_RING_SECTORS)
+    element_per_sector = np.bincount(bins[element & in_band], minlength=CON_RING_SECTORS)
+
+    safe_band = np.maximum(band_per_sector, 1)
+    density = lit_per_sector / safe_band
+    lit = ((density >= CON_SECTOR_DENSITY_LIT)
+           & (lit_per_sector >= CON_SECTOR_MIN_PIXELS)
+           & (band_per_sector > 0))
+    element_density = element_per_sector / safe_band
+    element_lit = ((element_density >= CON_SECTOR_DENSITY_LIT)
+                   & (element_per_sector >= CON_SECTOR_MIN_PIXELS)
+                   & (band_per_sector > 0))
+
+    lit_list = lit.tolist()
+    band_gray = cropped[in_band].mean() if np.any(in_band) else 0.0
+    return {
+        'lit': lit_list,
+        'total_lit': float(np.count_nonzero(lit)) / CON_RING_SECTORS,
+        'largest_run': _largest_arc_run(lit_list) / CON_RING_SECTORS,
+        'max_gap': _largest_gap_run(lit_list),
+        'element_lit_total': float(np.count_nonzero(element_lit)) / CON_RING_SECTORS,
+        'pollution': float(pollution),
+        'brightness': float(band_gray),
+        'bright_core': float(bright_core),
+    }
+
+
+class ConReadState:
+    """Per-task state for the concerto reader: frame memo, full-confirm
+    sightings, and the last trusted value for untrusted-frame holds."""
+    __slots__ = ('char_key', 'frame_key', 'memo', 'full_sight_t',
+                 'full_sight_frame', 'full_sight_lit', 'trusted', 'trusted_t')
+
+    def __init__(self):
+        self.reset()
+
+    def reset(self):
+        self.char_key = None
+        self.frame_key = None
+        self.memo = None
+        self.full_sight_t = 0.0
+        self.full_sight_frame = None
+        self.full_sight_lit = None
+        self.trusted = None
+        self.trusted_t = 0.0
+
+
+def _signature_match(a, b):
+    """Fraction of sectors on which two lit signatures agree."""
+    if not a or not b or len(a) != len(b):
+        return 0.0
+    same = sum(1 for x, y in zip(a, b) if x == y)
+    return same / len(a)
+
+
+def resolve_con_reading(state, profile, now, frame_key, char_key):
+    """Turn one frame's ring profile into the reported concerto percent.
+
+    Pure state machine (unit-testable): returns (percent, untrusted, reason)
+    and updates ``state``. Rules:
+    - a char change resets everything (sightings must never carry across a
+      swap: the incoming char's ring starts empty);
+    - the SAME frame returns the memoized verdict (tight loops re-read between
+      next_frame calls; one frame is one sighting, never two);
+    - UNTRUSTED frames (pollution / flash core / whiteout) hold the last
+      trusted value for up to CON_HOLD_MAX_AGE, then fall back to the raw
+      capped reading; they never stamp trust and never grant a full sighting,
+      but they do NOT clear an armed sighting (a polluted frame between two
+      clean fulls must not restart the confirm);
+    - a clean frame meeting the FULL geometry arms a sighting; a second clean
+      full on a DIFFERENT frame within CON_FULL_CONFIRM_WINDOW whose
+      lit-signature matches the first confirms -> 1. Until confirmed it reads
+      0.99, which the engine's almost-full path (sleep 0.05, re-read) and
+      StrictRotation's confirm_con_full turn into the confirming second read
+      naturally;
+    - a clean NON-full frame clears the sighting and reports the contiguous
+      arc directly (capped 0.99) -- no baseline, no calibration.
+    """
+    if state.char_key != char_key:
+        state.reset()
+        state.char_key = char_key
+    if state.frame_key == frame_key and state.memo is not None:
+        return state.memo
+    state.frame_key = frame_key
+
+    polluted = profile['pollution'] > CON_RING_POLLUTION_MAX
+    flash = profile['bright_core'] > CON_BRIGHT_CORE_FLASH
+    whiteout = (profile['brightness'] > CON_WHITEOUT_BRIGHTNESS
+                and profile['element_lit_total'] < CON_WHITEOUT_MAX_ELEMENT_LIT
+                and not profile['total_lit'] >= CON_RING_COVERAGE_FULL)
+    # flash overrides the bright-union: when the core is flooded white the
+    # bright mask is meaningless, so a "full" built on it cannot be trusted.
+    untrusted = polluted or flash or whiteout
+    if untrusted:
+        reason = ('polluted' if polluted else 'flash' if flash else 'whiteout')
+        if state.trusted is not None and now - state.trusted_t <= CON_HOLD_MAX_AGE:
+            result = (state.trusted, True, f'{reason}: holding last trusted')
+        else:
+            result = (min(profile['largest_run'], 0.99), True,
+                      f'{reason}: no recent trusted value, raw capped')
+        state.memo = result
+        return result
+
+    full_geometry = (profile['total_lit'] >= CON_RING_COVERAGE_FULL
+                     and profile['max_gap'] <= CON_FULL_MAX_GAP_SECTORS)
+    if full_geometry:
+        prior_ok = (state.full_sight_frame is not None
+                    and state.full_sight_frame != frame_key
+                    and now - state.full_sight_t <= CON_FULL_CONFIRM_WINDOW
+                    and _signature_match(state.full_sight_lit, profile['lit'])
+                    >= CON_FULL_SIGNATURE_MATCH)
+        state.full_sight_t = now
+        state.full_sight_frame = frame_key
+        state.full_sight_lit = profile['lit']
+        if prior_ok:
+            percent, reason = 1, 'full confirmed (2 clean matching frames)'
+        else:
+            percent, reason = 0.99, 'full seen once, awaiting confirm'
+    else:
+        state.full_sight_frame = None
+        state.full_sight_lit = None
+        percent = min(profile['largest_run'], 0.99)
+        reason = 'clean partial (contiguous arc)'
+    state.trusted = percent
+    state.trusted_t = now
+    result = (percent, False, reason)
+    state.memo = result
+    return result
+
+
 class BaseCombatTask(CombatCheck):
     """基础战斗任务类，封装了游戏"鸣潮"中角色自动化操作的通用逻辑。"""
     hot_key_verified = False  # 热键是否已验证
-    con_full_size = None  # 不同角色协奏值充满时的大小记录
+    # NOTE: the old persisted per-element full-size baseline (con_full_size
+    # Config) is GONE with the area channel: the geometric reader measures the
+    # fill fraction directly and has nothing to calibrate, drift, or poison.
     freeze_durations = []  # 记录冻结/卡肉的持续时间
-    if con_full_size is None:
-        con_full_size = Config("_con_full_size", {
-            "0": 0,
-            "1": 0,
-            "2": 0,
-            "3": 0,
-            "4": 0,
-            "5": 0,
-        })
 
     def __init__(self, *args, **kwargs):
         """初始化战斗任务。
@@ -132,6 +388,10 @@ class BaseCombatTask(CombatCheck):
         self.combat_start = 0  # 战斗开始时间戳
         self.add_text_fix({'Ｅ': 'e'})
         self.use_liberation = True
+        # concerto reader state (see get_current_con): the untrusted flag is
+        # public API (held-value frames), the state object is internal.
+        self.con_read_untrusted = False
+        self._con_read_state = None
 
     def add_freeze_duration(self, start, duration=-1.0, freeze_time=0.1):
         """添加冻结持续时间。用于精确计算技能冷却等。
@@ -934,39 +1194,73 @@ class BaseCombatTask(CombatCheck):
     def is_con_full(self):
         """检查当前角色的协奏值是否已满。
 
-        Ring read only. A portrait-marker template channel (con_full_* in the
-        char's con_mark box) was tried as a false-negative rescue and REMOVED:
-        log 835f001c showed it matching the element flourish in the char's slot
-        ~75ms after a swap-away (con actually 0.0) and NOT matching during a
-        genuine on-field full -- wrong in both directions. The real false
-        negatives were a stale con_full_size baseline, fixed in get_current_con
-        (clean-geometry fulls now override and heal the baseline).
+        Ring geometry only, two-frame confirmed (see resolve_con_reading). A
+        portrait-marker template channel (con_full_* in the char's con_mark
+        box) was tried as a false-negative rescue and REMOVED: log 835f001c
+        showed it matching the element flourish in the char's slot ~75ms after
+        a swap-away (con actually 0.0) and NOT matching during a genuine
+        on-field full -- wrong in both directions.
 
         Returns:
             bool: 如果协奏值已满则返回 True, 否则 False。
         """
         return self.get_current_con() == 1
 
-    def _ensure_ring_index(self):
+    def _con_state(self):
+        state = getattr(self, '_con_read_state', None)
+        if state is None:
+            state = ConReadState()
+            self._con_read_state = state
+        return state
+
+    def _ensure_ring_index(self, cropped=None):
         """确保当前角色协奏值环的颜色索引已识别。
 
-        Returns:
-            int: 协奏值环的颜色索引。
-        """
-        if self.get_current_char().ring_index < 0:
-            box = self.get_con_box()
+        Reworked: identification counts pixels INSIDE THE ANNULUS BAND only
+        (the old whole-box percentage let Iuno's ring-coloured domain arcs and
+        element VFX outside the band pick the wrong colour), requires a
+        minimum of evidence before CACHING (a starved frame -- swap blur,
+        flash -- returns -1 for this read instead of latching a garbage index
+        forever), and HEALS a wrong cache: if the cached colour is completely
+        absent from the band while another colour has strong evidence, the
+        index is re-stamped. ring_index doubles as the ELEMENT id for the
+        lib_ready/portrait templates, so a wrong latch hurts far beyond the
+        con read.
 
-            best_index = 0
-            best_percentage = 0
-            for i in range(len(con_colors)):
-                percent = self.calculate_color_percentage(con_colors[i], box)
-                if percent > best_percentage:
-                    best_percentage = percent
-                    best_index = i
-            self.get_current_char().ring_index = best_index
+        Returns:
+            int: 协奏值环的颜色索引 (-1 when it cannot be identified yet).
+        """
+        char = self.get_current_char(raise_exception=False)
+        if char is None:
+            return -1
+        box = self.get_con_box()
+        if cropped is None:
+            cropped = box.crop_frame(self.frame)
+        h, w = cropped.shape[:2]
+        in_band = _con_geometry(h, w)[0]
+        # evidence floor: ~40 band pixels at the 4K crop, scaled by crop area
+        min_evidence = max(8, int(40 * (h * w) / (126 * 126)))
+        counts = []
+        for color_range in con_colors:
+            lower, upper = _color_range_to_bgr_bounds(color_range)
+            element = np.all((cropped >= lower) & (cropped <= upper), axis=2)
+            counts.append(int(np.count_nonzero(element & in_band)))
+        best_index = int(np.argmax(counts))
+        cached = char.ring_index
+        if cached >= 0:
+            if counts[cached] == 0 and counts[best_index] >= min_evidence:
+                self.logger.warning(
+                    f'_ensure_ring_index healing {char}: cached '
+                    f'{con_templates[cached]} absent from the band, '
+                    f'{con_templates[best_index]} has {counts[best_index]} px')
+                char.ring_index = best_index
+            return char.ring_index
+        if counts[best_index] >= min_evidence:
+            char.ring_index = best_index
             self.log_debug(
-                f'_ensure_ring_index {self.get_current_char()} to {self.get_current_char().ring_index} {con_templates[best_index]}')
-        return self.get_current_char().ring_index
+                f'_ensure_ring_index {char} to {char.ring_index} '
+                f'{con_templates[best_index]} ({counts[best_index]} px)')
+        return char.ring_index
 
     def get_con_box(self):
         """获取协奏值能量环的UI区域盒子对象。
@@ -980,311 +1274,70 @@ class BaseCombatTask(CombatCheck):
     def get_current_con(self):
         """获取当前角色的协奏值百分比。
 
+        Reworked (see the module header above the constants): ONE geometric
+        measurement (per-sector band density -> contiguous arc) resolved
+        through a small state machine (untrusted-frame holds, two-frame
+        signature-matched full confirm). No area channel, no persisted
+        baseline, no rescue patches.
+
         Returns:
-            float: 协奏值百分比 (0.0 到 1.0)。
+            float: 协奏值百分比 (0.0 到 1.0); exactly 1 only on a confirmed full.
         """
         box = self.get_con_box()
         box.confidence = 0
-
-        max_area = 0
-        percent = 0
-        max_is_full = False
-        target_index = self._ensure_ring_index()
-
         cropped = box.crop_frame(self.frame)
-        for i in range(len(con_colors)):
-            if target_index != -1 and i != target_index:
-                continue
-            color_range = con_colors[i]
-            area, is_full = self.count_rings(cropped, color_range,
-                                             1500 / 3840 / 2160 * self.screen_width * self.screen_height)
-            if is_full:
-                max_is_full = is_full
-            if area > max_area:
-                max_area = int(area)
-        baseline = self.con_full_size[str(target_index)]
-        # Angular metrics for the same crop (see con_ring_metrics): the contiguous
-        # covered arc is the geometric concerto fraction (no baseline to poison),
-        # and a high outside fraction marks the frame as flooded by VFX.
-        ring_color = con_colors[target_index] if 0 <= target_index < len(con_colors) else con_colors[0]
-        arc, outside = self.con_ring_metrics(cropped, ring_color)
-        polluted = outside > CON_RING_POLLUTION_MAX
-        # Blind-frame detection. Two ways VFX blind the reader: POLLUTION
-        # (ring-coloured VFX flooding past the annulus) and WHITEOUT (a bright
-        # flash blooms the ring right out of its colour range, so almost
-        # nothing matches -- video 048ca5ff: a ~0.6 ring read 0.0 for ~3s under
-        # f-break/lib-field flashes while the crop was near-white). Reads off a
-        # blind frame are garbage-LOW, so flag them; BaseChar.get_current_con
-        # holds the last trusted value instead of letting garbage overwrite it.
-        whiteout = float(np.mean(cropped)) > 190 and max_area < baseline * 0.5
-        self.con_read_untrusted = polluted or whiteout
-        if whiteout:
-            self.log_debug(f'is_con_full whiteout frame (area {max_area}), read untrusted')
-        # SELF-CALIBRATING full-area anchor: on a clean frame with a clearly
-        # PARTIAL ring, area/arc estimates the true full-ring area. The star-
-        # overlay state (user screenshots: decorated closed ring + blazing star
-        # that reads arc=1.00 clean at ~2.15-2.25x the plain ring's area while
-        # NOT full) can never contribute here -- it never shows a partial arc
-        # -- so the anchor is immune to the very state it exists to unmask,
-        # and it also self-heals a persisted con_full_size that earlier runs
-        # poisoned with star-inflated areas.
-        if not polluted and not whiteout and 0.3 <= arc <= 0.9 and max_area > 0:
-            est = max_area / arc
-            anchors = getattr(self, '_con_anchor', None)
-            if anchors is None:
-                anchors = self._con_anchor = {}
-            old = anchors.get(str(target_index))
-            anchors[str(target_index)] = est if old is None else 0.7 * old + 0.3 * est
-            self.log_debug(f'is_con_full anchor[{target_index}] -> '
-                           f'{anchors[str(target_index)]:.0f} (est {est:.0f} at arc {arc:.2f})')
-        anchor = getattr(self, '_con_anchor', {}).get(str(target_index), 0)
-        # The anchor outranks the persisted baseline: it is measured THIS fight
-        # from the plain ring, while con_full_size can carry a stale or star-
-        # poisoned value across runs.
-        effective_full = anchor if anchor > 0 else baseline
-        looks_full = max_is_full or (not polluted and not whiteout
-                                     and arc >= CON_RING_COVERAGE_FULL)
-        if looks_full and effective_full > 0 and max_area > effective_full * CON_STAR_RING_RATIO:
-            # A closed clean ring FAR bigger than the plain ring's full area is
-            # the decorated star state, not concerto -- blind frame: reject the
-            # full, hold the last trusted value (char-cache hold), never stamp.
-            self.con_read_untrusted = True
-            self._arc_full_last = 0   # star frames must not feed the arc-full streak
-            self.logger.info(
-                f'is_con_full decorated/star ring: area {max_area} is '
-                f'{max_area / effective_full:.2f}x the {"anchor" if anchor else "baseline"} '
-                f'full area -- not concerto, holding last trusted value')
-            box.confidence = 0
-            self.draw_boxes(f'is_con_full_{self}', box)
-            return 0
-        if max_is_full and effective_full > 0 and max_area > effective_full * CON_FULL_MAX_RATIO:
-            # A ring area above the full-area reference and NOT already caught
-            # by the star check: bright VFX flooding the box (f-break burst,
-            # 2.22x, high outside), or -- only while no anchor exists and the
-            # persisted baseline is stale-low -- a genuine full (835f001c).
-            # With an anchor measured this fight the reference is trustworthy,
-            # so a clean over-ratio full may recalibrate the persisted
-            # baseline; without one, reject rather than guess.
-            if anchor > 0 and not polluted and arc >= CON_RING_COVERAGE_FULL:
-                self.logger.info(
-                    f'is_con_full area {max_area} is {max_area / effective_full:.2f}x the anchor '
-                    f'but within the star bound and geometry is clean -- accepting as full')
-            else:
-                self.logger.warning(
-                    f'is_con_full area {max_area} is {max_area / effective_full:.2f}x the '
-                    f'{"anchor" if anchor else "calibrated"} full size (polluted={polluted}, '
-                    f'arc={arc:.2f}) -- inflated/VFX ring, treating as not full')
-                max_is_full = False
-        if max_is_full and (polluted or arc < CON_RING_VETO_ARC):
-            # count_rings says full, but the ring is visibly incomplete (arc) or
-            # the frame is flooded (pollution) -- an area-based false positive
-            # (user footage caught one right after an f-break). Veto it.
-            self.logger.warning(
-                f'is_con_full area-full VETOED: arc={arc:.2f} outside={outside:.2f}')
-            max_is_full = False
-        if max_is_full:
-            percent = 1
-            self.con_full_size[str(target_index)] = max_area
-            self._arc_full_last = time.time()   # a genuine full sighting feeds the streak
+        target_index = self._ensure_ring_index(cropped)
 
-        if percent != 1 and effective_full > 0:
-            percent = max_area / effective_full
-        if not max_is_full:
-            if not polluted and not whiteout and arc >= CON_RING_COVERAGE_FULL:
-                # A clean contiguous full ring that survived the star bound is
-                # FULL: count_rings can miss a genuine full (a transient VFX
-                # gap, the contour-convexity test failing) and a stale
-                # persisted baseline skews the area ratio in both directions
-                # (log 835f001c: genuine fulls at 2.1x stuck at 0.99 forever).
-                # The decorated star state was already rejected above by the
-                # anchor-based CON_STAR_RING_RATIO bound, so no extra area
-                # bound is needed here.
-                #
-                # Geometry must also PERSIST: a single frame where a
-                # ring-coloured field sweep bridges the gap sectors reads as a
-                # contiguous full ring, and one such frame faked a full on a
-                # visibly partial ring ('sk is not getting full concerto') and
-                # latched the char cache at 1, defeating the double-read
-                # confirm. So the promotion needs TWO clean arc-full sightings
-                # within ARC_FULL_STREAK_WINDOW: a moving sweep cannot hold
-                # the bridge across reads, a genuinely full (even
-                # dim-rendered) ring trivially can. The stamp still
-                # recalibrates the baseline so poisoning is not sticky.
-                now = time.time()
-                streak_ok = now - getattr(self, '_arc_full_last', 0) < ARC_FULL_STREAK_WINDOW
-                self._arc_full_last = now
-                if streak_ok:
-                    self.logger.info(f'is_con_full confirmed full by angular arc ({percent:.2f})')
-                    percent = 1
-                    max_is_full = True
-                    self.con_full_size[str(target_index)] = max_area
-                else:
-                    self.logger.info(
-                        f'is_con_full arc-full seen once (area {percent:.2f}); needs a '
-                        f'second clean read within {ARC_FULL_STREAK_WINDOW}s to confirm')
-                    percent = 0.99
-            else:
-                self._arc_full_last = 0   # broken streak: this frame is not a clean full
-                if percent >= 1:
-                    self.logger.warning(
-                        f'is_con_full not full but percent greater than 1, set to 0.99, '
-                        f'{percent} {max_is_full} arc={arc:.2f} outside={outside:.2f}')
-                    percent = 0.99
-                if not polluted and abs(percent - arc) > CON_RING_DISAGREE:
-                    # Partial reads: the calibrated-area percent disagrees badly
-                    # with the geometric arc on a clean frame -- a stale/poisoned
-                    # baseline (or area noise) is skewing it. The arc needs no
-                    # calibration; trust it.
-                    self.logger.info(
-                        f'is_con_full partial corrected by arc: area={percent:.2f} -> {arc:.2f}')
-                    percent = min(arc, 0.99)
-        if percent > 1:
-            self.logger.error(f'is_con_full percent greater than 1, set to 1, {percent} {max_is_full}')
-            percent = 1
+        if 0 <= target_index < len(con_colors):
+            candidates = [con_colors[target_index]]
+        else:
+            # identity unknown this frame (starved/blurred): read all colours
+            # and take the strongest profile; the index caches on the next
+            # clean frame.
+            candidates = con_colors
+        profile = None
+        for color_range in candidates:
+            lower, upper = _color_range_to_bgr_bounds(color_range)
+            p = con_ring_profile(cropped, lower, upper)
+            if profile is None or (p['total_lit'], -p['pollution']) > \
+                    (profile['total_lit'], -profile['pollution']):
+                profile = p
+
+        char = self.get_current_char(raise_exception=False)
+        percent, untrusted, reason = resolve_con_reading(
+            self._con_state(), profile, time.time(), id(self.frame),
+            id(char) if char is not None else None)
+        self.con_read_untrusted = untrusted
+        self.log_debug(
+            f'get_current_con {percent:.2f} [{reason}] lit={profile["total_lit"]:.2f} '
+            f'run={profile["largest_run"]:.2f} gap={profile["max_gap"]} '
+            f'pol={profile["pollution"]:.2f} br={profile["brightness"]:.0f} '
+            f'core={profile["bright_core"]:.2f}')
 
         box.confidence = percent
         self.draw_boxes(f'is_con_full_{self}', box)
-        if percent > 1:
-            percent = 1
         return percent
 
     def con_ring_metrics(self, cropped, color_range, sectors=72):
-        """Frame analysis of the concerto ring: (contiguous arc fraction,
-        pollution fraction).
-
-        The ring fills as ONE CONTIGUOUS arc, so the longest covered arc IS the
-        concerto fraction geometrically -- no calibrated full-size baseline that
-        can drift or be poisoned. Scattered VFX speckles light isolated angular
-        bins but cannot extend the contiguous arc.
-
-        Also reports how much of the ring-coloured mask sits OUTSIDE the annulus
-        band: a real ring concentrates its pixels inside the band, whereas a
-        screen flash (f-break burst etc.) floods the whole crop -- a high outside
-        fraction means the frame cannot be trusted for a FULL verdict.
-
-        Returns:
-            tuple(float, float): (largest contiguous covered arc as a fraction of
-            the circle, fraction of matching pixels outside the annulus).
-        """
-        h, w = cropped.shape[:2]
-        cx, cy = w / 2.0, h / 2.0
-        r_inner, r_outer = h * 0.35119, h * 0.42261
-        lower_bound, upper_bound = color_range_to_bound(color_range)
-        mask = cv2.inRange(cropped, lower_bound, upper_bound)
-        ys, xs = np.nonzero(mask)
-        if len(xs) == 0:
-            return 0.0, 0.0
-        dx = xs - cx
-        dy = ys - cy
-        dist = np.sqrt(dx * dx + dy * dy)
-        in_annulus = (dist >= r_inner) & (dist <= r_outer)
-        inside = int(np.count_nonzero(in_annulus))
-        outside_fraction = 1.0 - inside / len(xs)
-        if inside == 0:
-            return 0.0, outside_fraction
-        angles = np.arctan2(dy[in_annulus], dx[in_annulus])  # -pi..pi
-        bins = ((angles + np.pi) / (2 * np.pi) * sectors).astype(np.int64) % sectors
-        covered = [False] * sectors
-        for b in np.unique(bins):
-            covered[int(b)] = True
-        arc = _largest_arc_run(covered) / sectors
-        self.log_debug(f'con_ring_metrics arc={arc:.2f} outside={outside_fraction:.2f}')
-        return arc, outside_fraction
+        """Compat wrapper over con_ring_profile: (contiguous arc fraction,
+        pollution fraction). The ``sectors`` argument is kept for signature
+        compatibility; the profile uses CON_RING_SECTORS."""
+        lower, upper = _color_range_to_bgr_bounds(color_range)
+        profile = con_ring_profile(cropped, lower, upper)
+        self.log_debug(f'con_ring_metrics arc={profile["largest_run"]:.2f} '
+                       f'outside={profile["pollution"]:.2f}')
+        return profile['largest_run'], profile['pollution']
 
     def con_ring_angularly_full(self, cropped, color_range, sectors=72,
                                 coverage=CON_RING_COVERAGE_FULL):
-        """Whether the ring is angularly (nearly) complete AND the frame is clean
-        enough to trust (see con_ring_metrics)."""
-        arc, outside = self.con_ring_metrics(cropped, color_range, sectors)
-        return arc >= coverage and outside <= CON_RING_POLLUTION_MAX
-
-    def count_rings(self, image, color_range, min_area):
-        """在指定图像区域内计算特定颜色范围的能量环数量和状态。
-
-        Args:
-            image (numpy.ndarray): 要分析的图像 (通常是协奏值UI区域的截图)。
-            color_range (dict): 目标颜色范围。
-            min_area (float): 认为是有效能量环的最小面积。
-
-        Returns:
-            tuple: (检测到的区域面积 (int), 是否为完整环 (bool))。
-        """
-        # Define the color range
-        lower_bound, upper_bound = color_range_to_bound(color_range)
-        masked_image = image.copy()
-        h, w = image.shape[:2]
-        center = (w // 2, h // 2)
-
-        # draw mask
-        r1, r2 = h * 0.35119, h * 0.42261
-        r1 = Decimal(str(r1)).quantize(Decimal('0'), rounding=ROUND_DOWN)
-        r2 = Decimal(str(r2)).quantize(Decimal('0'), rounding=ROUND_UP)
-
-        ring_mask = np.zeros((h, w), dtype=np.uint8)
-        cv2.circle(ring_mask, center, int(r2), 255, -1)
-        cv2.circle(ring_mask, center, int(r1), 0, -1)
-        masked_image = cv2.bitwise_and(masked_image, masked_image, mask=ring_mask)
-
-        # Perform closing operation (Dilation followed by Erosion)
-        raw_mask = cv2.inRange(masked_image, lower_bound, upper_bound)
-        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
-        closed_mask = cv2.morphologyEx(raw_mask, cv2.MORPH_CLOSE, kernel)
-        closed_mask[center[1] - 1:center[1] + 2, center[0] + 1:] = \
-            raw_mask[center[1] - 1:center[1] + 2, center[0] + 1:]
-
-        # Find connected components
-        num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(closed_mask, connectivity=8)
-
-        # Function to check if a component forms a ring
-        def is_full_ring(component_mask):
-            # Find contours
-            contours, _ = cv2.findContours(component_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-            if len(contours) != 1:
-                return False
-            contour = contours[0]
-
-            # Check if the contour is closed by checking if the start and end points are the same
-            # if cv2.arcLength(contour, True) > 0:
-            #     return True
-            # Approximate the contour with polygons.
-            epsilon = 0.05 * cv2.arcLength(contour, True)
-            approx = cv2.approxPolyDP(contour, epsilon, True)
-
-            # Check if the polygon is closed (has no gaps) and has a reasonable number of vertices for a ring.
-            if not cv2.isContourConvex(approx) or len(approx) < 4:
-                return False
-
-            # All conditions met, likely a close ring.
-            return True
-
-        # output_image = image.copy()
-        # Iterate over each component
-        ring_count = 0
-        is_full = False
-        the_area = 0
-        for label in range(1, num_labels):
-            x, y, width, height, area = stats[label, :5]
-            bounding_box_area = width * height
-            component_mask = (labels == label).astype(np.uint8) * 255
-            # color = colors[label % len(colors)]
-            # mask = labels == label
-            # output_image[mask] = color
-            if bounding_box_area >= min_area:
-                # Select a color from the list based on the label index
-                if is_full_ring(component_mask):
-                    is_full = True
-                the_area = area
-                ring_count += 1
-
-        # Save or display the image with contours
-        # cv2.imwrite(fr'test\count_rings_{is_full}_{self.screen_width}_mask.png', output_image)
-        # cv2.imwrite(fr'test\count_rings_{is_full}_{self.screen_width}.png', masked_image)
-        if ring_count > 1:
-            is_full = False
-            the_area = 0
-            self.logger.warning(f'is_con_full found multiple rings {ring_count}')
-
-        return the_area, is_full
+        """Whether the ring is angularly complete AND the frame is clean enough
+        to trust (compat wrapper; full geometry = coverage + bounded gap)."""
+        lower, upper = _color_range_to_bgr_bounds(color_range)
+        profile = con_ring_profile(cropped, lower, upper)
+        return (profile['total_lit'] >= coverage
+                and profile['max_gap'] <= CON_FULL_MAX_GAP_SECTORS
+                and profile['pollution'] <= CON_RING_POLLUTION_MAX
+                and profile['bright_core'] <= CON_BRIGHT_CORE_FLASH)
 
     def update_lib_portrait_icon(self):
         # self.ensure_con_lib_boxes()
