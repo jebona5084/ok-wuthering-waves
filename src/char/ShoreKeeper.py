@@ -24,6 +24,16 @@ class ShoreKeeper(BaseChar):
         current_name = current_char.char_name if current_char else None
         if self.attribute == 2 and has_intro and current_name in {'Augusta', 'char_augusta'}:
             return SwitchPriority.MUST
+        # ANTI-BOUNCE (user footage: SK -> Iuno -> SK within seconds): after SK
+        # leaves the field, she must not take it right back from IUNO -- that
+        # slot belongs to Augusta (the amp receiver). The bounce happened when
+        # SK's exit was a PLAIN swap (unconfirmed full), Iuno's short visit
+        # ended low-con, and the engine's generic "refresh an unbuffed support"
+        # rule picked the just-departed SK. Her MUST claim above still wins
+        # (Augusta's con-full exit), so the cycle itself is unaffected.
+        if (current_name in {'Iuno', 'char_iuno'}
+                and 0 <= self.time_elapsed_accounting_for_freeze(self.last_switch_time) < 6):
+            return SwitchPriority.NO
         return super().get_switch_priority(current_char, has_intro, target_low_con)
 
     def skip_combat_check(self):
