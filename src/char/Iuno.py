@@ -81,17 +81,27 @@ class Iuno(BaseChar):
         """Execute one strict-rotation beat (see src/combat/StrictRotation.py)."""
         from src.combat.StrictRotation import dash
         if beat.name in ('iuno_open1', 'iuno_open2'):
-            # 2 / 4. skill
+            # 2 / 4. skill, then Space if the Flux prompt lit (user: 'iuno
+            # should press spacbar if the skill is available' -- jump_cancel
+            # presses Space only while the iuno_jump prompt shows, so this is
+            # a no-op when it is not available).
             self.click_resonance()
+            self.jump_cancel()
         elif beat.name == 'iuno_open3':
-            # 6. echo
+            # 6. echo, then Space if the Flux prompt lit
             self.click_echo()
+            self.jump_cancel()
         elif beat.name == 'iuno_loop1':
-            # 12. skill, echo, dash, skill
+            # 12. skill, echo, dash, skill -- Space after each cast when lit.
+            # (The burst beats stay untouched: they already Flux at entry, and
+            # the kit bans jumps AROUND the Arc casts -- an air-cast drops the
+            # skill buff.)
             self.click_resonance()
+            self.jump_cancel()
             self.click_echo()
             dash(self)
             self.click_resonance()
+            self.jump_cancel()
         elif beat.name in ('iuno_burst', 'iuno_burst2'):
             # 8 / 14. (intro) jump-cancel, lib, skill, ba1234, skill, ba, ha, outro
             if beat.intro:
