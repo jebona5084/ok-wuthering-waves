@@ -23,7 +23,27 @@ class ShoreKeeper(BaseChar):
         self.decide_teammate()
         current_name = current_char.char_name if current_char else None
         if self.attribute == 2 and has_intro and current_name in {'Augusta', 'char_augusta'}:
-            return SwitchPriority.MUST
+            # REFRESH-NEED gating (measured, log 3a0c1e77): the unconditional
+            # claim pulled her in for three no-op visits (15.8s of a 25s lib cd
+            # window) while Iuno's amp bank was the actual blocker. Claim only
+            # when her buff genuinely needs refreshing, placed EARLY in the cd
+            # window so Iuno's amp can land last:
+            try:
+                from src.char.Augusta import augusta_lib_remaining
+                from src.combat.BuffTracker import get_buff_tracker, SK_OUTRO
+                t = augusta_lib_remaining(self.task)
+                rem = get_buff_tracker(self.task).remaining(SK_OUTRO)
+                if t is None or rem < t + 11.0:
+                    # emergency / cold start: the buff would be under the 4s
+                    # burst-gate margin at the majesty gate (~t+7) -- refresh.
+                    return SwitchPriority.MUST
+                if rem < t + 17.0 and t >= 10.0:
+                    # routine refresh, early in the window (payoff END sits at
+                    # ~t+17: the gate plus the ~9s burst routine).
+                    return SwitchPriority.MUST
+                # else: nothing to add -- fall through to the economy cede.
+            except Exception:
+                return SwitchPriority.MUST   # never break the cycle on a read error
         # ANTI-BOUNCE (user footage: SK -> Iuno -> SK within seconds): after SK
         # leaves the field, she must not take it right back from IUNO -- that
         # slot belongs to Augusta (the amp receiver). The bounce happened when
@@ -75,12 +95,23 @@ class ShoreKeeper(BaseChar):
         click_liberation no-ops when it is on cooldown, and the dodge cuts the
         Stellarealm-deploy recovery. On success the Stellarealm is stamped on the
         buff tracker (fixed 30s field that persists with her off-field) so the
-        rotation can read its live remaining. Returns True if it fired."""
-        if self.click_liberation():
-            from src.combat.BuffTracker import get_buff_tracker, SK_LIBERATION
-            get_buff_tracker(self.task).apply(SK_LIBERATION, source=self)
-            self.dodge_cancel()
-            return True
+        rotation can read its live remaining. Returns True if it fired.
+
+        RETRY (measured, log 3a0c1e77): the first lib click reliably failed
+        ('clicked liberation but no effect' -- intro/echo recovery eating the
+        key press) and the refresh then drifted 3-4.5s before anything
+        retried. One settle-and-retry claws that back; genuine on-cooldown
+        calls stay a single cheap check."""
+        for attempt in (0, 1):
+            if self.click_liberation():
+                from src.combat.BuffTracker import get_buff_tracker, SK_LIBERATION
+                get_buff_tracker(self.task).apply(SK_LIBERATION, source=self)
+                self.dodge_cancel()
+                return True
+            if attempt == 0 and not self.has_cd('liberation'):
+                self.sleep(0.35)
+                continue
+            break
         return False
 
     def decide_teammate(self):
@@ -169,30 +200,33 @@ class ShoreKeeper(BaseChar):
         from src.combat.StrictRotation import basic_attacks, aggressive_cancel_enabled
         agg = aggressive_cancel_enabled(self.task)  # jump-cancel filler basics when on
         if beat.name == 'sk_open':
-            # 3. lib (immediately if ready), ba12345, ha -- and NOTHING else.
-            # Liberation up front so its team buff is up at once, but echo and
-            # skill are SAVED for sk_open2: measured (log c5607282 + crops),
-            # spending the whole kit here left her outro beat with basics only,
-            # and it ground 0.57 -> 1.00 for 6.9 seconds ('sk didnt build
-            # enough concerto at the beginning'). With echo+skill in hand,
-            # sk_open2 banks the same concerto in ~2s.
+            # 3. lib, SKILL (Chaos Theory), ba123, ha. Measured across logs
+            # c5607282 and 3a0c1e77: the skill grants ~20 concerto instantly
+            # and the REMAINDER TRICKLES IN OFF-FIELD (kit: cast-and-leave),
+            # so casting it HERE lets the trickle run through beats 3-5 for
+            # free -- saving it for sk_open2 forfeited exactly that (she
+            # re-entered beat 6 at the same 0.32 she left with). Echo stays
+            # saved for sk_open2 (its concerto is instant either way). The
+            # dodge cuts the skill's recovery.
             self._cast_liberation_now()
+            self.click_resonance()
+            self.dodge_cancel()
             # forte_check: spend her enhanced heavy the moment it charges during
             # the basics (it is a big concerto source) instead of letting it
             # overcap until the next scripted heavy.
-            basic_attacks(self, 5, forte_check=self.is_mouse_forte_full, cancel=agg)
+            basic_attacks(self, 3, forte_check=self.is_mouse_forte_full, cancel=agg)
             self.heavy_attack()
         elif beat.name == 'sk_open2':
-            # 7. lib (if ready), echo, skill+forte, ba12345, ha, outro
-            # Echo and skill were SAVED by sk_open (see above), so both big
-            # concerto chunks land HERE, up front -- the ring is near full
-            # within ~2s and the outro top-off only trims the remainder,
-            # instead of the old 6.9s basics grind.
+            # 7. lib-check (cd skip ~0.1s), echo, forte heavy, outro top-off.
+            # Echo was saved by sk_open; the forte heavy follows IMMEDIATELY
+            # (no skill cast before it -- the skill is on its ~16s cd from
+            # beat 2, and the old skill-then-heavy order left a measured 1.11s
+            # animation-settle gap). No scripted basics either: the outro
+            # top-off supplies exactly as many as the remaining gap needs.
             self._cast_liberation_now()
             self.click_echo(time_out=0)
-            self._spend_skill_and_forte()
-            basic_attacks(self, 5, forte_check=self.is_mouse_forte_full, cancel=agg)
-            self.heavy_attack()
+            if not self.heavy_click_forte(self.is_mouse_forte_full):
+                self.heavy_attack()
         elif beat.name in ('sk_intro', 'sk_loop'):
             # 10 / 16. super intro, lib (immediately), build concerto, outro
             if beat.intro:

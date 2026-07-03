@@ -44,28 +44,37 @@ class Iuno(BaseChar):
                 return SwitchPriority.MUST
             if priority == NO:
                 return SwitchPriority.NO
-        # Reactive field-time guarantee (user report: 'after 1st rotation,
-        # iuno isn't getting enough field time to provide buffs'): the mutual
-        # Augusta<->SK claims leave Iuno fielding only on plain exits that
-        # happen to fall to her. When her amp is NOT banked and SK's field
-        # buff is comfortably live (nothing urgent for SK to add), Iuno
-        # claims the next PLAIN exit so the cycle refills her amp before
-        # Augusta's burst wants it. Outro exits (has_intro) keep their
-        # routing untouched -- SK's outro belongs to Augusta -- and she never
-        # claims right after leaving (no self-bounce).
-        if not has_intro:
-            try:
-                from src.combat.BuffTracker import (get_buff_tracker,
-                                                    IUNO_OUTRO, SK_LIBERATION)
+        # LIB-CD-ALIGNED amp bank (user: Augusta must have both buffs when her
+        # lib cd ends; measured: the 15s amp cannot survive the 25s cd, so the
+        # bank must land in the cd's LAST stretch). Iuno claims the field --
+        # plain exits AND ShoreKeeper's outro hand-off (Augusta cedes it while
+        # the bank is pending) -- exactly when the bank window is open. She
+        # never claims Augusta's own intro exits (SK's refresh owns that slot,
+        # first in the window) and never claims within 4s of leaving (no
+        # self-bounce). Falls back to the old amp-down/SK-field-live rule when
+        # there is no Augusta on the team.
+        try:
+            from src.char.Augusta import amp_bank_window_open
+            from src.char.ShoreKeeper import ShoreKeeper
+            from src.combat.BuffTracker import (get_buff_tracker,
+                                                IUNO_OUTRO, SK_LIBERATION)
+            t, window_open = amp_bank_window_open(self.task)
+            no_bounce = self.time_elapsed_accounting_for_freeze(
+                self.last_switch_time) > 4
+            if t is not None:
+                if (window_open and no_bounce
+                        and (not has_intro
+                             or isinstance(current_char, ShoreKeeper))):
+                    return SwitchPriority.MUST
+            elif not has_intro:
                 tracker = get_buff_tracker(self.task)
                 if (tracker.has(IUNO_OUTRO)
                         and tracker.remaining(IUNO_OUTRO) <= 0
                         and tracker.remaining(SK_LIBERATION) > 8
-                        and self.time_elapsed_accounting_for_freeze(
-                            self.last_switch_time) > 4):
+                        and no_bounce):
                     return SwitchPriority.MUST
-            except Exception:
-                self.logger.debug('Iuno field-time claim failed', exc_info=True)
+        except Exception:
+            self.logger.debug('Iuno bank-window claim failed', exc_info=True)
         return super().get_switch_priority(current_char, has_intro, target_low_con)
 
     def perform_beat(self, beat):
@@ -272,9 +281,10 @@ class Iuno(BaseChar):
                     continue
                 else:  # 没有intro, 切人取消后摇
                     return
-            if self.time_elapsed_accounting_for_freeze(
-                    self.last_liberation) > 20 and self.click_liberation(
-                wait_if_cd_ready=0):
+            if (self.time_elapsed_accounting_for_freeze(
+                    self.last_liberation) > 20
+                    and self._domain_recast_ok()
+                    and self.click_liberation(wait_if_cd_ready=0)):
                 # 开大招
                 start = time.time()
                 time_out = 3
@@ -286,6 +296,22 @@ class Iuno(BaseChar):
                 self.click()
             self.sleep(0.1 - (time.time() - cycle_start))
 
+    def _domain_recast_ok(self):
+        """Skip the ~4.5s Full Moon Domain recast when the amp bank is tight.
+
+        Measured (log 3a0c1e77): the domain cast ate ~4.5s of her 10.7s bank
+        visit, pushing the amp outro past Augusta's lib-ready. In the bank
+        window's tail the amp comes FIRST; the domain (30s field, not read by
+        the burst gate) goes up on the next, unhurried visit."""
+        try:
+            from src.char.Augusta import amp_bank_window_open
+            t, amp_short = amp_bank_window_open(self.task)
+            if t is None:
+                return True
+            return not (amp_short and t <= 8.0)
+        except Exception:
+            return True
+
     def switch_next_char(self, *args, **kwargs):
         # Order matters: build concerto to FULL first (reactive top-off -- her
         # outro also needs it), because Absolute Fullness's buff ONLY applies at
@@ -294,21 +320,54 @@ class Iuno(BaseChar):
         # (it completes and the buff transfers regardless). A plain swap before
         # the outro sheds her own stacks, so the mandatory top-off exists to turn
         # as many exits as possible into outros.
-        from src.combat.VariableRotation import reactive_outro_topoff
-        from src.combat.StrictRotation import confirm_con_full
+        from src.combat.VariableRotation import (reactive_outro_topoff,
+                                                 get_active_rotation)
+        from src.combat.StrictRotation import confirm_con_full, build_concerto
         from src.combat.BuffTracker import get_buff_tracker, IUNO_OUTRO
         tracker = get_buff_tracker(self.task)
-        # When her amp is NOT banked, this exit is the one that must bank it:
-        # drop the top-off threshold to 0 so the exit builds to full from ANY
-        # level (bounded by the top-off's own budget) instead of plain-swapping
-        # from below 0.6 and wasting the visit ('iuno isn't getting enough
-        # field time to provide buffs' -- short visits entered low never
-        # crossed 0.6, so nothing ever built).
+        # Bank-window-gated build-to-full: ONLY when the amp must be banked for
+        # the upcoming burst does this exit build from any level (threshold 0).
+        # Outside the window the 0.6 threshold stands -- a full ring banked
+        # EARLY auto-outros (the engine forces has_intro at con==1) and the
+        # 15s amp then dies before the ~25s lib cd ends, which is exactly the
+        # measured failure (log 3a0c1e77: amp dead at both lib-ready moments).
+        t = None
+        amp_short = False
+        try:
+            from src.char.Augusta import amp_bank_window_open
+            t, amp_short = amp_bank_window_open(self.task)
+        except Exception:
+            self.logger.debug('Iuno bank window read failed', exc_info=True)
         threshold = 0.6
-        if tracker.has(IUNO_OUTRO) and tracker.remaining(IUNO_OUTRO) <= 0:
+        if ((t is not None and t <= 14.0 and amp_short)
+                or (t is None and tracker.has(IUNO_OUTRO)
+                    and tracker.remaining(IUNO_OUTRO) <= 0)):
             threshold = 0.0
         reactive_outro_topoff(self, kwargs, threshold=threshold, aggressive=True,
                               mandatory=True)
+        # HOLD-AND-FINISH (reactive only): time the banking outro into the
+        # LAST seconds of Augusta's lib cd. Full-but-early -> hold the field
+        # with filler (an early outro wastes the amp); not-full -> keep
+        # building (kills the measured 0.94-exit-without-outro miss). Bounded
+        # so a stuck read can never wedge the fight.
+        IUNO_OUTRO_LEAD = 4.0   # amp needs >=4s at the majesty gate (~t+7)
+        IUNO_HOLD_MAX = 12.0
+        if (amp_short and t is not None
+                and not get_active_rotation(self.task).is_active()):
+            hold_start = time.time()
+            from src.char.Augusta import augusta_lib_remaining
+            while time.time() - hold_start < IUNO_HOLD_MAX:
+                full = confirm_con_full(self)
+                remaining = augusta_lib_remaining(self.task)
+                if full and (remaining is None or remaining <= IUNO_OUTRO_LEAD):
+                    break
+                if not full:
+                    build_concerto(self)
+                else:
+                    self.click()
+                    self.sleep(0.1)
+            if confirm_con_full(self):
+                kwargs['free_intro'] = True
         # Will this exit be an OUTRO? free_intro is only ever set on a
         # CONFIRMED-full ring (both top-off paths), so it implies con full and
         # skips a second read; otherwise double-read the ring ourselves --

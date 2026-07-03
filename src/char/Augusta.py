@@ -69,13 +69,26 @@ class Augusta(BaseChar):
                 return SwitchPriority.MUST
             if priority == NO:
                 return SwitchPriority.NO
-        # Reactive phase (user request): Augusta CLAIMS ShoreKeeper's con-full
-        # outro, so SK's amp + recovery butterflies land directly on her for the
-        # burst. Iuno's outro also defaults to Augusta, and SK claims Augusta's
-        # con-full exit -- the cycle is Augusta -> SK -> Augusta with Iuno feeding
-        # in between.
+        # Reactive phase, LIB-CD-ALIGNED (user request: 'augusta should have
+        # iunos and sk buffs when her liberation cd is just about ready').
+        # Measured (log 3a0c1e77): iuno_outro (15s) is structurally shorter
+        # than her ~25s lib cd, so the amp must be banked into the LAST stretch
+        # of the cd -- it was dead at both reactive lib-ready moments and the
+        # burst fired 25s late. Routing:
+        # - SK's con-full outro comes to Augusta as before, EXCEPT while the
+        #   amp bank is pending: then Iuno takes it (sk_outro is duration-only
+        #   40s and survives routing through her; the receiver-bound amp must
+        #   land LAST, directly onto Augusta).
+        # - Iuno's outro near lib-ready is claimed explicitly: Augusta IS the
+        #   amp receiver.
         from src.char.ShoreKeeper import ShoreKeeper
+        from src.char.Iuno import Iuno
         if has_intro and isinstance(current_char, ShoreKeeper):
+            if self._amp_needs_bank():
+                return SwitchPriority.NORMAL   # cede to Iuno's bank claim
+            return SwitchPriority.MUST
+        if (has_intro and isinstance(current_char, Iuno)
+                and self.lib_cd_remaining() <= 8.0):
             return SwitchPriority.MUST
         return super().get_switch_priority(current_char, has_intro, target_low_con)
 
@@ -223,6 +236,41 @@ class Augusta(BaseChar):
         self._build_and_cast_majesty()
         self.send_echo_key()                     # False Sovereign echo -- the outro
         #                                          swap right after is its cancel
+
+    # Her liberation cooldown (lib1 and the majesty both reset it; measured
+    # ~25s nominal, casts land ~23.7-25s apart). Anchored on last_liberation
+    # because the cd OCR slot is UNRELIABLE during Griffin/majesty states
+    # (log 3a0c1e77: it under-read by 15.5s mid-cycle) -- the anchor's slight
+    # conservatism only makes supports run early, never Augusta cast late
+    # (her casts stay icon-gated on field).
+    LIB_CD = 25.0
+    # The amp bank window: Iuno's bank must START when the lib cd drops to
+    # this (her measured claim->outro bank is ~10-12s, ~6-7s without the
+    # domain recast)...
+    AMP_BANK_LEAD = 14.0
+    # ...and the amp must still have MIN_BURST_BUFF_REMAINING (4s) at the
+    # majesty gate, which sits ~7s after lib-ready (lib1 + griffin x3): so a
+    # live amp only covers the burst when remaining >= lib_remaining + 11.
+    AMP_GATE_MARGIN = 11.0
+
+    def lib_cd_remaining(self):
+        """Seconds until her liberation is ready; anchor-first, cd-OCR fallback."""
+        if self.last_liberation > 0:
+            return max(0.0, self.LIB_CD - self.time_elapsed_accounting_for_freeze(
+                self.last_liberation))
+        try:
+            return max(0.0, float(self.task.get_cd('liberation', self.index)))
+        except Exception:
+            return 0.0
+
+    def _amp_needs_bank(self, t=None):
+        """Whether Iuno's amp must be banked NOW for the upcoming burst."""
+        from src.combat.BuffTracker import get_buff_tracker, IUNO_OUTRO
+        if t is None:
+            t = self.lib_cd_remaining()
+        return (t <= self.AMP_BANK_LEAD
+                and get_buff_tracker(self.task).remaining(IUNO_OUTRO)
+                < t + self.AMP_GATE_MARGIN)
 
     def _sk_outro_elapsed(self):
         """Freeze-adjusted seconds since ShoreKeeper's last con-full exit (which
@@ -465,6 +513,11 @@ class Augusta(BaseChar):
             self.logger.debug('Augusta performs majesty failed: not in animation')
             self.task.in_liberation = False
             return False
+        # cd anchor: the majesty RESETS the ~25s liberation cooldown. Without
+        # this stamp lib_cd_remaining() reads ready ~9s early every cycle (the
+        # lib1->majesty gap) and the supports would bank the amp ~9s early --
+        # re-creating the amp-dies-before-lib-ready failure.
+        self.record_liberation_use()
         self.task.wait_until(lambda: self.task.in_team()[0], post_action=self.click, time_out=10)
         self.add_freeze_duration(start, time.time() - start)
         self.logger.info(f'click_liberation end {time.time() - start}')
@@ -578,3 +631,27 @@ class Augusta(BaseChar):
         next_char = str((self.index + 1) % len(chars) + 1)
         self.logger.debug(f'Augusta on_combat_end {self.index} switch next char: {next_char}')
         self.task.send_key(next_char)
+
+
+def augusta_lib_remaining(task):
+    """Seconds until the team's Augusta has her liberation ready, or None when
+    there is no Augusta (callers fall back to their legacy rules). The pacing
+    clock for the whole lib-CD-aligned support schedule."""
+    for char in task.chars:
+        if isinstance(char, Augusta):
+            return char.lib_cd_remaining()
+    return None
+
+
+def amp_bank_window_open(task):
+    """(lib_remaining, window_open) for Iuno's amp-bank scheduling.
+
+    window_open when the amp will NOT cover the upcoming burst (see
+    Augusta.AMP_GATE_MARGIN) and the lib cd has entered the bank lead. None
+    lib_remaining = no Augusta on the team."""
+    from src.combat.BuffTracker import get_buff_tracker, IUNO_OUTRO
+    t = augusta_lib_remaining(task)
+    if t is None:
+        return None, False
+    amp = get_buff_tracker(task).remaining(IUNO_OUTRO)
+    return t, (t <= Augusta.AMP_BANK_LEAD and amp < t + Augusta.AMP_GATE_MARGIN)
