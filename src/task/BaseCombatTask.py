@@ -1525,9 +1525,16 @@ class BaseCombatTask(CombatCheck):
         # reused buffer with NEW content is a new frame; a genuinely duplicated
         # frame still memoizes as one sighting.
         frame_key = (id(self.frame), int(cropped[::5, ::5].sum()))
+        # char identity for the reader state: NOT id(char) -- load_chars can
+        # RECREATE character objects mid-fight (team UI re-reads), and an id
+        # change silently wiped the partial-growth history and armed full
+        # sightings at random moments ('hit or miss' detection). (index,
+        # char_name) is stable across recreation and still changes on every
+        # actual swap, which is the reset the state machine needs.
+        char_key = (char.index, char.char_name) if char is not None else None
         percent, untrusted, reason = resolve_con_reading(
-            self._con_state(), profile, time.time(), frame_key,
-            id(char) if char is not None else None)
+            self._con_state(), profile, time.time(), frame_key, char_key)
+        self._maybe_dump_con_crop(cropped, percent, reason, profile)
         self.con_read_untrusted = untrusted
         self.log_debug(
             f'get_current_con {percent:.2f} [{reason}] lit={profile["total_lit"]:.2f} '
@@ -1539,6 +1546,45 @@ class BaseCombatTask(CombatCheck):
         box.confidence = percent
         self.draw_boxes(f'is_con_full_{self}', box)
         return percent
+
+    # Diagnostic crop capture: 'sk concerto detection is still hit or miss'
+    # cannot be diagnosed from verdict logs alone -- the next report needs the
+    # PIXELS the reader saw. Saves the con crop whenever the verdict CATEGORY
+    # changes (partial -> full-seen, held -> confirmed, ...), throttled and
+    # capped, with the full profile in the filename. Toggle in Character
+    # Config; files land in concerto_debug/ next to the configs.
+    CON_DUMP_CONFIG_KEY = 'Concerto Debug Captures'
+    CON_DUMP_MIN_INTERVAL = 0.3
+    CON_DUMP_MAX_FILES = 200
+
+    def _maybe_dump_con_crop(self, cropped, percent, reason, profile):
+        try:
+            char_config = getattr(self, 'char_config', None)
+            if not char_config or not char_config.get(self.CON_DUMP_CONFIG_KEY):
+                return
+            category = reason.split(':')[0].split('(')[0].strip().replace(' ', '_')
+            now = time.time()
+            if (category == getattr(self, '_con_dump_last_cat', None)
+                    and now - getattr(self, '_con_dump_last_t', 0) < self.CON_DUMP_MIN_INTERVAL):
+                return
+            count = getattr(self, '_con_dump_count', 0)
+            if count >= self.CON_DUMP_MAX_FILES:
+                return
+            import os
+            import cv2
+            folder = 'concerto_debug'
+            os.makedirs(folder, exist_ok=True)
+            fname = (f'{time.strftime("%H%M%S")}_{int((now % 1) * 1000):03d}'
+                     f'_{category}_p{percent:.2f}_lit{profile["total_lit"]:.2f}'
+                     f'_blm{profile["bloom_lit_total"]:.2f}'
+                     f'_pol{profile["pollution"]:.2f}'
+                     f'_fld{profile.get("on_field", 0):.1f}.png')
+            cv2.imwrite(os.path.join(folder, fname), cropped)
+            self._con_dump_last_cat = category
+            self._con_dump_last_t = now
+            self._con_dump_count = count + 1
+        except Exception:  # diagnostics must never break a read
+            self.logger.debug('con crop dump failed', exc_info=True)
 
     def con_ring_metrics(self, cropped, color_range, sectors=72):
         """Compat wrapper over con_ring_profile: (contiguous arc fraction,
