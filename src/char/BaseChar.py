@@ -724,10 +724,25 @@ class BaseChar:
         return self.task.is_con_full()
 
     def get_current_con(self):
+        """获取当前协奏值百分比 (代理到 task.get_current_con)。
+
+        Blind-frame hold: concerto NEVER decreases while a character is on field
+        (it only resets on an outro'd swap, handled in switch_out). When the ring
+        reader reports its frame was untrusted (VFX pollution / whiteout flash),
+        a LOWER read is the reader being blinded, not the ring draining -- video
+        048ca5ff showed a ~0.6 ring reading 0.0 for ~3s under f-break flashes,
+        which zeroed threshold checks and skipped top-offs. Hold the last trusted
+        value instead; a trusted read always overwrites (truth wins, so a stale
+        cache cannot survive a clean look at the ring).
+        """
         if self.current_con == 1:
             return 1
-        """获取当前协奏值百分比 (代理到 task.get_current_con)。"""
-        self.current_con = self.task.get_current_con()
+        read = self.task.get_current_con()
+        if read < self.current_con and getattr(self.task, 'con_read_untrusted', False):
+            self.logger.debug(
+                f'con read {read:.2f} off an untrusted frame; holding {self.current_con:.2f}')
+            return self.current_con
+        self.current_con = read
         return self.current_con
 
     def is_mouse_forte_full(self):

@@ -996,6 +996,17 @@ class BaseCombatTask(CombatCheck):
         ring_color = con_colors[target_index] if 0 <= target_index < len(con_colors) else con_colors[0]
         arc, outside = self.con_ring_metrics(cropped, ring_color)
         polluted = outside > CON_RING_POLLUTION_MAX
+        # Blind-frame detection. Two ways VFX blind the reader: POLLUTION
+        # (ring-coloured VFX flooding past the annulus) and WHITEOUT (a bright
+        # flash blooms the ring right out of its colour range, so almost
+        # nothing matches -- video 048ca5ff: a ~0.6 ring read 0.0 for ~3s under
+        # f-break/lib-field flashes while the crop was near-white). Reads off a
+        # blind frame are garbage-LOW, so flag them; BaseChar.get_current_con
+        # holds the last trusted value instead of letting garbage overwrite it.
+        whiteout = float(np.mean(cropped)) > 190 and max_area < baseline * 0.5
+        self.con_read_untrusted = polluted or whiteout
+        if whiteout:
+            self.log_debug(f'is_con_full whiteout frame (area {max_area}), read untrusted')
         if max_is_full and baseline > 0 and max_area > baseline * CON_FULL_MAX_RATIO:
             # A ring area FAR above the calibrated full size is EITHER bright VFX
             # flooding the ring box (the f-break burst read 2.22x while the ring
@@ -1032,36 +1043,37 @@ class BaseCombatTask(CombatCheck):
 
         if percent != 1 and baseline > 0:
             percent = max_area / baseline
-        if not max_is_full and percent >= 1:
-            # The ring area is at/above the calibrated full size, but count_rings
-            # did not confirm a closed ring (a transient VFX gap, or the
-            # contour-convexity check in is_full_ring failing). That false negative
-            # capped a genuinely full ring at 0.99, and since is_con_full requires
-            # exactly 1 the outro never fired. Confirm fullness by the contiguous
-            # arc instead -- gated on clean geometry only (unpolluted frame + a
-            # contiguous full arc), since a flash floods outside the annulus. No
-            # area-ratio bound here: a huge ratio with clean geometry is a stale
-            # baseline (log 835f001c: genuine fulls at 2.1x were stuck at 0.99
-            # forever), and the stamp below recalibrates it. Baseline poisoning is
-            # no longer sticky in either direction, because every clean-geometry
-            # full re-stamps.
+        if not max_is_full:
             if not polluted and arc >= CON_RING_COVERAGE_FULL:
+                # A clean contiguous full ring is FULL regardless of what the
+                # area channel thinks. count_rings can miss a genuine full (a
+                # transient VFX gap, the contour-convexity test failing) and the
+                # area ratio lies in both directions with a stale baseline (log
+                # 835f001c: genuine fulls at 2.1x stuck at 0.99 forever; a
+                # baseline stamped off a bright glow makes a dim-rendered full
+                # read ~0.5 -- and the old rescue only ran when percent >= 1, so
+                # the dim case could NEVER be confirmed). Clean geometry decides;
+                # the stamp recalibrates the baseline so poisoning is not sticky
+                # in either direction. A flash cannot fake this: it floods
+                # outside the annulus and trips `polluted`.
                 self.logger.info(f'is_con_full confirmed full by angular arc ({percent:.2f})')
                 percent = 1
                 max_is_full = True
                 self.con_full_size[str(target_index)] = max_area
             else:
-                self.logger.warning(
-                    f'is_con_full not full but percent greater than 1, set to 0.99, '
-                    f'{percent} {max_is_full} arc={arc:.2f} outside={outside:.2f}')
-                percent = 0.99
-        if not max_is_full and not polluted and abs(percent - arc) > CON_RING_DISAGREE:
-            # Partial reads: the calibrated-area percent disagrees badly with the
-            # geometric arc on a clean frame -- a stale/poisoned baseline (or area
-            # noise) is skewing it. The arc needs no calibration; trust it.
-            self.logger.info(
-                f'is_con_full partial corrected by arc: area={percent:.2f} -> {arc:.2f}')
-            percent = min(arc, 0.99)
+                if percent >= 1:
+                    self.logger.warning(
+                        f'is_con_full not full but percent greater than 1, set to 0.99, '
+                        f'{percent} {max_is_full} arc={arc:.2f} outside={outside:.2f}')
+                    percent = 0.99
+                if not polluted and abs(percent - arc) > CON_RING_DISAGREE:
+                    # Partial reads: the calibrated-area percent disagrees badly
+                    # with the geometric arc on a clean frame -- a stale/poisoned
+                    # baseline (or area noise) is skewing it. The arc needs no
+                    # calibration; trust it.
+                    self.logger.info(
+                        f'is_con_full partial corrected by arc: area={percent:.2f} -> {arc:.2f}')
+                    percent = min(arc, 0.99)
         if percent > 1:
             self.logger.error(f'is_con_full percent greater than 1, set to 1, {percent} {max_is_full}')
             percent = 1
