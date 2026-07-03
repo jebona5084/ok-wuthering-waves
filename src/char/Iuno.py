@@ -155,10 +155,10 @@ class Iuno(BaseChar):
                 # acts on it. do_everything otherwise returns with only a 0.05s
                 # tail, and the burst's outro top-off / grounding / swap (or the
                 # reactive switch) then cancel the heavy before its buff lands.
-                # 0.8s: log analysis showed the swap landing ~0.7s after the heavy
-                # PRESS with a 0.35s settle -- mid-animation, before the hit that
-                # applies the buff. The full slam needs ~1s from press to register.
-                self.sleep(0.8)
+                # 1.2s: 0.35s clipped the slam mid-animation and the buff was
+                # still missing at 0.8s (the hit registers late in the ~1s+
+                # animation), so give it clear margin.
+                self.sleep(1.2)
                 if not c6_performed and self.is_c6():
                     c6_performed = True
                     start = time.time()
@@ -201,7 +201,7 @@ class Iuno(BaseChar):
                                            threshold=0.55)):
             self.heavy_attack()
             self.last_heavy = time.time()
-            self.sleep(0.8)  # let the slam's hit register (same settle as do_everything)
+            self.sleep(1.2)  # let the slam's hit register (same settle as do_everything)
             self.logger.info('Iuno: special heavy fired on switch-out')
         # Reactive-phase outro hardening: Iuno's outro carries her buffs to Augusta
         # but only fires at FULL concerto, and do_everything returns as soon as her
