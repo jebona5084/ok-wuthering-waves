@@ -127,6 +127,13 @@ AGGRESSIVE_CANCEL_DEFAULT = True
 SWITCH_WHILE_BUILDING_CONFIG_KEY = 'Augusta Iuno SK Switch While Building'
 SWITCH_WHILE_BUILDING_DEFAULT = True
 
+# Even with switch-while-building ON, never bail out of a concerto top-off when
+# the ring is this close to full -- finishing it costs an action or two and wins
+# the outro buff, which beats the fraction of a second the early swap would save.
+# Evidence (user log): with the bail unconditional, Iuno left at 0.956/0.966 con
+# as PLAIN swaps and her outro buffs never reached Augusta.
+TOPOFF_HOLD_FROM = 0.9
+
 
 def _config_flag(task, key, default):
     """Read a boolean Character Config toggle, falling back to ``default`` when the
@@ -565,7 +572,10 @@ def topoff_concerto(char, time_out, checks_per_action=3):
         # the scripted rotation the coordinator keeps others NO, so this is False
         # until the beat advances (outro beats still build to full). Config-gated
         # (default on) -- turn it off to always build to full for the outro buff.
-        if switch_while_building_enabled(char.task) and can_switch_now(char):
+        # HOLD BAND: never bail when the ring is >= TOPOFF_HOLD_FROM -- that close,
+        # finishing the ring (and its outro buff) beats the early swap.
+        if (switch_while_building_enabled(char.task) and can_switch_now(char)
+                and char.get_current_con() < TOPOFF_HOLD_FROM):
             return False
         build_concerto(char)                        # one high-yield build action
         for _ in range(max(1, checks_per_action)):  # then poll the ring frequently

@@ -83,6 +83,9 @@ class FakeChar:
     def is_con_full(self):
         return self._con_full
 
+    def get_current_con(self):
+        return 1.0 if self._con_full else 0.5
+
     def is_forte_full(self):
         return self._forte_full
 

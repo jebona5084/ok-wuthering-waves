@@ -25,6 +25,7 @@ def make_char(cls_name):
     obj.flying = lambda: False
     obj.wait_down = lambda *a, **k: None
     # defaults so build_concerto() (used by the outro top-off) can run in tests
+    obj.get_current_con = lambda: 0.0
     obj.liberation_available = lambda *a, **k: False
     obj.echo_available = lambda *a, **k: False
     obj.resonance_available = lambda *a, **k: False
@@ -419,6 +420,27 @@ class TestStrictRotation(unittest.TestCase):
         char.click = lambda *a, **k: builds.__setitem__('n', builds['n'] + 1)
         self.assertFalse(topoff_concerto(char, 2.5))  # bailed below full
         self.assertEqual(builds['n'], 0)              # swapped before building
+
+    def test_topoff_concerto_holds_near_full_even_with_ready_target(self):
+        # HOLD BAND: at >= 0.9 con the top-off must FINISH the ring for the outro,
+        # not bail to a ready target. (User log: Iuno bailed at 0.956/0.966 as
+        # plain swaps and her outro buffs never reached Augusta.)
+        from src.combat.StrictRotation import topoff_concerto
+        task = FakeTask(target_team())
+        char = task.chars[2]
+        full = {'v': False}
+        char.is_con_full = lambda: full['v']
+        char.get_current_con = lambda: 0.95           # near full -> hold
+        task._choose_switch_target = lambda c, has_intro=False, target_low_con=False: task.chars[0]
+        task._target_has_switch_cd = lambda c: False  # target IS ready...
+        builds = {'n': 0}
+
+        def build_and_fill(*a, **k):
+            builds['n'] += 1
+            full['v'] = True
+        char.click = build_and_fill
+        self.assertTrue(topoff_concerto(char, 2.5))   # ...but we finish the ring
+        self.assertEqual(builds['n'], 1)
 
     def test_topoff_concerto_no_early_bail_when_toggle_off(self):
         # 'Switch While Building' off -> build to full even when a target is ready

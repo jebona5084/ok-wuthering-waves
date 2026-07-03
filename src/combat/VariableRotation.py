@@ -176,7 +176,13 @@ class VariableRotation(StrictRotation):
                 break  # ring already full -> stop early so the outro fires now
             self._dwell_fill(char, beat.outro)
         if beat.outro:
-            return char.is_con_full() or topoff_concerto(char, OUTRO_TOPOFF_TIME_OUT)
+            ready = char.is_con_full() or topoff_concerto(char, OUTRO_TOPOFF_TIME_OUT)
+            # log the RAW con next to the decision: a forced outro whose raw read
+            # is 0.99 (full only via the angular rescue) is the suspect when the
+            # in-game buff does not appear despite con_full=True.
+            logger.info(f'{self.LABEL} outro beat {beat.name}: con_full={ready} '
+                        f'(raw con={char.get_current_con():.2f})')
+            return ready
         return False
 
     def _dwell_fill(self, char, outro):
