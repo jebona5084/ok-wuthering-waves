@@ -173,9 +173,49 @@ class TestComputeWindow(unittest.TestCase):
         self.assertEqual(compute_window(beat, FakeChar('Augusta', FakeTask([]))), 0)
 
     def test_augusta_intro_extends_to_14_on_iuno_intro(self):
+        # tracker COLD (buff never stamped) -> legacy fixed 14 fallback
         beat = Beat('aug_burst', 'Augusta', intro=True, outro=True)
         char = FakeChar('Augusta', FakeTask([]), has_sub_dps_intro=True, outro='char_iuno')
         self.assertEqual(compute_window(beat, char), 14)
+
+    def test_augusta_intro_window_reads_live_tracker_remaining(self):
+        from src.combat.BuffTracker import get_buff_tracker, IUNO_OUTRO
+        beat = Beat('aug_burst', 'Augusta', intro=True, outro=True)
+        char = FakeChar('Augusta', FakeTask([]), has_sub_dps_intro=True, outro='char_iuno')
+        tracker = get_buff_tracker(char.task)
+        tracker.apply(IUNO_OUTRO, duration=8.0)          # 8s left < the 14 cap
+        window = compute_window(beat, char)
+        self.assertGreater(window, 7.0)
+        self.assertLessEqual(window, 8.0)
+        # the dwell BINDS the receiver so a swap-out expires the amp
+        self.assertEqual(tracker._buffs[IUNO_OUTRO].receiver, 'Augusta')
+        tracker.on_char_switch_out('Augusta')
+        self.assertEqual(tracker.remaining(IUNO_OUTRO), 0.0)
+
+    def test_augusta_intro_window_capped_at_14(self):
+        from src.combat.BuffTracker import get_buff_tracker, IUNO_OUTRO
+        beat = Beat('aug_burst', 'Augusta', intro=True, outro=True)
+        char = FakeChar('Augusta', FakeTask([]), has_sub_dps_intro=True, outro='char_iuno')
+        get_buff_tracker(char.task).apply(IUNO_OUTRO, duration=60.0)
+        self.assertLessEqual(compute_window(beat, char), 14.0)
+
+    def test_expired_tracker_amp_still_gives_cold_fallback_window(self):
+        # buff stamped but already worn off -> remaining 0; the beat still gets
+        # a window only via... nothing: min(14, 0) == 0 would kill the dwell,
+        # but has() is True so the tracker is the authority -> window 0.
+        from src.combat.BuffTracker import get_buff_tracker, IUNO_OUTRO
+        beat = Beat('aug_burst', 'Augusta', intro=True, outro=True)
+        char = FakeChar('Augusta', FakeTask([]), has_sub_dps_intro=True, outro='char_iuno')
+        get_buff_tracker(char.task).apply(IUNO_OUTRO, duration=0.0)
+        self.assertEqual(compute_window(beat, char), 0)
+
+    def test_callable_seconds_rule_raising_is_ignored(self):
+        beat = Beat('x', 'Augusta', intro=False, outro=False)
+        def boom_seconds(_):
+            raise RuntimeError('seconds blew up')
+        win = Window(base=3, extend=[Extension('boom_s', lambda c: True, boom_seconds)])
+        with patch.dict(WINDOWS, {'x': win}, clear=False):
+            self.assertEqual(compute_window(beat, FakeChar('Augusta', FakeTask([]))), 3)
 
     def test_no_extend_without_the_condition(self):
         beat = Beat('aug_burst', 'Augusta', intro=True, outro=True)

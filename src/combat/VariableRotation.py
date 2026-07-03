@@ -62,7 +62,11 @@ Window = namedtuple('Window', ['base', 'extend'])
 #   name      : human-readable id (for logging / tests)
 #   predicate : called with the on-field character; truthy -> the rule fires. Must
 #               be SIDE-EFFECT FREE (it may be evaluated more than once).
-#   seconds   : the window this rule extends the beat to when it fires.
+#   seconds   : the window this rule extends the beat to when it fires. Either a
+#               number, or a CALLABLE (char -> seconds) for windows RECALCULATED
+#               from live state (the BuffTracker's seconds-remaining); evaluated
+#               once per fire, so unlike the predicate it may stamp bookkeeping
+#               (e.g. receiver binding).
 Extension = namedtuple('Extension', ['name', 'predicate', 'seconds'])
 
 
@@ -78,10 +82,40 @@ def _holds_iuno_sub_dps_intro(char):
         return False
 
 
-# Augusta lingers ~14s to spend Iuno's transferred buff whenever she enters on
-# that sub-DPS intro; every other beat quickswaps (base 0, no rules) exactly like
-# the strict rotation until a window is added here.
-_AUGUSTA_IUNO_INTRO = Extension('iuno_sub_dps_intro', _holds_iuno_sub_dps_intro, 14)
+# The legacy fixed dwell for a visit entered on Iuno's outro amp; also the
+# ceiling for the tracker-driven window below and the fallback when the
+# tracker is cold.
+IUNO_AMP_WINDOW_MAX = 14.0
+
+
+def _iuno_amp_window(char):
+    """Dwell window RECALCULATED from the live remaining on Iuno's outro amp.
+
+    Utilises the BuffTracker instead of a fixed 14: a fresh outro still yields
+    ~14s, but a mid-buff re-entry (resync, combat flicker) gets only what is
+    genuinely left, so the beat never overstays a dead amplify. Also binds
+    ``char`` as the amp's RECEIVER so the tracker expires it the moment she
+    swaps out (the kit's early death), keeping remaining() honest for the
+    burst gate that reads it next. Falls back to the legacy fixed window when
+    the tracker has not seen the buff (cold start / partial wiring)."""
+    from src.combat.BuffTracker import get_buff_tracker, IUNO_OUTRO
+    tracker = get_buff_tracker(char.task)
+    tracker.bind_receiver(IUNO_OUTRO, getattr(char, 'char_name', char.name))
+    if not tracker.has(IUNO_OUTRO):
+        return IUNO_AMP_WINDOW_MAX
+    remaining = tracker.remaining(IUNO_OUTRO)
+    window = min(IUNO_AMP_WINDOW_MAX, remaining)
+    logger.info(f'VariableRotation: Iuno-amp dwell recalculated from tracker '
+                f'remaining {remaining:.1f}s -> window {window:.1f}s')
+    return window
+
+
+# Augusta lingers on field to spend Iuno's transferred amp whenever she enters
+# on that sub-DPS intro -- for the amp's LIVE remaining (tracker-driven, capped
+# at the legacy 14s); every other beat quickswaps (base 0, no rules) exactly
+# like the strict rotation until a window is added here.
+_AUGUSTA_IUNO_INTRO = Extension('iuno_sub_dps_intro', _holds_iuno_sub_dps_intro,
+                                _iuno_amp_window)
 
 WINDOWS = {
     'aug_burst':  Window(base=0, extend=[_AUGUSTA_IUNO_INTRO]),
@@ -96,10 +130,12 @@ _QUICKSWAP = Window(base=0, extend=())
 def compute_window(beat, char):
     """Resolve ``beat``'s dwell window (seconds) for the on-field ``char``.
 
-    Pure function: ``max(base, seconds of every extension rule that fires)``. A
-    beat with no window entry (or all predicates false) resolves to its base --
-    0 for a quickswap. Kept free of side effects so it is unit-testable with a
-    lightweight fake character.
+    ``max(base, seconds of every extension rule that fires)``. A beat with no
+    window entry (or all predicates false) resolves to its base -- 0 for a
+    quickswap. Predicates stay side-effect free; a rule's ``seconds`` may be a
+    callable (char -> seconds) recalculated from live state (BuffTracker
+    remaining) and is evaluated ONCE per fire. A raising rule (predicate or
+    seconds) is skipped -- it must never break the rotation.
     """
     window = WINDOWS.get(beat.name, _QUICKSWAP)
     seconds = window.base
@@ -109,8 +145,15 @@ def compute_window(beat, char):
         except Exception:  # a bad predicate must never break the rotation
             logger.exception(f'VariableRotation window rule {ext.name} raised; ignoring')
             fired = False
-        if fired and ext.seconds > seconds:
-            seconds = ext.seconds
+        if not fired:
+            continue
+        try:
+            ext_seconds = ext.seconds(char) if callable(ext.seconds) else ext.seconds
+        except Exception:  # a bad seconds rule must never break the rotation
+            logger.exception(f'VariableRotation window seconds {ext.name} raised; ignoring')
+            continue
+        if ext_seconds > seconds:
+            seconds = ext_seconds
     return seconds
 
 
