@@ -211,9 +211,13 @@ class Iuno(BaseChar):
         # the outro sheds her own stacks, so the mandatory top-off exists to turn
         # as many exits as possible into outros.
         from src.combat.VariableRotation import reactive_outro_topoff
+        from src.combat.StrictRotation import confirm_con_full
         reactive_outro_topoff(self, kwargs, threshold=0.6, aggressive=True,
                               mandatory=True)
-        if (self.is_con_full()
+        # confirm_con_full: her own Full Moon Domain sweeps ring-coloured arcs
+        # through the concerto box; a single-frame full read can be fake, and a
+        # fake here would burn Absolute Fullness's 20s cooldown for no buff.
+        if (confirm_con_full(self)
                 and self.time_elapsed_accounting_for_freeze(self.last_heavy) > 20
                 and self.task.find_feature("iuno_heavy", box="box_extra_action",
                                            threshold=0.55)):

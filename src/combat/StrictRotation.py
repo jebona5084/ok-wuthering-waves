@@ -358,7 +358,7 @@ class StrictRotation:
         # cannot stall the rotation; non-outro beats switch immediately.
         outro_ready = False
         if beat.outro:
-            outro_ready = char.is_con_full() or topoff_concerto(char, OUTRO_TOPOFF_TIME_OUT)
+            outro_ready = confirm_con_full(char) or topoff_concerto(char, OUTRO_TOPOFF_TIME_OUT)
             logger.info(f'{self.LABEL} outro beat {beat.name}: con_full={outro_ready}')
         self._handoff(char, beat, outro_ready)
         return True
@@ -382,7 +382,7 @@ class StrictRotation:
         is gated on ``beat.outro`` so non-outro beats never poll concerto, and on
         ``not outro_ready`` so a confirmed-full beat is not read twice.
         """
-        if beat.outro and not outro_ready and char.is_con_full():
+        if beat.outro and not outro_ready and confirm_con_full(char):
             outro_ready = True
             logger.info(f'{self.LABEL} outro beat {beat.name}: ring confirmed full at '
                         f'hand-off, forcing outro')
@@ -540,6 +540,21 @@ def build_concerto(char):
     char.click()
 
 
+def confirm_con_full(char, settle=0.15):
+    """Full only if TWO ring reads a beat apart agree.
+
+    Persistent moving VFX can fake a single full read -- Iuno's Full Moon Domain
+    sweeps white-cyan arcs (her own ring colour) through the concerto box for
+    seconds at a time. The arcs rotate frame to frame while a genuinely full ring
+    is static, so requiring a second read after a short settle rejects them at
+    the cost of ~0.15s per confirmed outro.
+    """
+    if not char.is_con_full():
+        return False
+    char.sleep(settle)
+    return bool(char.is_con_full())
+
+
 def can_switch_now(char):
     """Whether a hand-off is possible right now: another character is a valid
     switch target AND is off its ~1s switch cooldown.
@@ -577,7 +592,7 @@ def topoff_concerto(char, time_out, checks_per_action=3, allow_early_switch=True
     """
     start = time.time()
     while time.time() - start < time_out:
-        if char.is_con_full():
+        if confirm_con_full(char):
             return True
         # switch "whenever possible": if a target is ready (off its 1s switch CD)
         # hand off now even below full rather than holding out for the outro. In
@@ -595,7 +610,9 @@ def topoff_concerto(char, time_out, checks_per_action=3, allow_early_switch=True
             return False
         build_concerto(char)                        # one high-yield build action
         for _ in range(max(1, checks_per_action)):  # then poll the ring frequently
-            if char.is_con_full():
+            # single-read poll for speed; a hit is then double-checked (stability
+            # vs moving VFX) by confirm_con_full before we call it full.
+            if char.is_con_full() and confirm_con_full(char):
                 return True
             char.task.next_frame()
-    return char.is_con_full()
+    return confirm_con_full(char)

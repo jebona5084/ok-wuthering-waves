@@ -57,8 +57,10 @@ CON_RING_COVERAGE_FULL = 0.93
 CON_RING_VETO_ARC = 0.90
 # - the frame is treated as VFX-POLLUTED when more than this fraction of the
 #   ring-coloured pixels sit OUTSIDE the annulus band; a real ring concentrates
-#   its pixels inside the band, a screen flash floods the whole crop
-CON_RING_POLLUTION_MAX = 0.5
+#   its pixels inside the band (measured 0.11-0.20 on genuine full reads), a
+#   screen flash or Iuno's Full Moon Domain arcs flood the crop. 0.5 let the
+#   domain arcs fake a full ring; 0.35 still clears every genuine read by ~2x.
+CON_RING_POLLUTION_MAX = 0.35
 # - partial reads: when the clean-frame arc and the calibrated-area percent
 #   disagree by more than this, trust the arc (a stale/poisoned baseline skews
 #   the area percent; the arc needs no calibration)

@@ -45,8 +45,8 @@ except Exception:  # pragma: no cover - exercised only when ``ok`` is unavailabl
 
 from src.combat.StrictRotation import (
     StrictRotation, OUTRO_TOPOFF_TIME_OUT, OUTRO_SWAP_SETTLE,
-    build_concerto, topoff_concerto, try_spend_forte, get_strict_rotation,
-    _combat_control_exceptions,
+    build_concerto, confirm_con_full, topoff_concerto, try_spend_forte,
+    get_strict_rotation, _combat_control_exceptions,
 )
 
 CONFIG_KEY = 'Augusta Iuno SK Variable Rotation'
@@ -176,7 +176,7 @@ class VariableRotation(StrictRotation):
                 break  # ring already full -> stop early so the outro fires now
             self._dwell_fill(char, beat.outro)
         if beat.outro:
-            ready = char.is_con_full() or topoff_concerto(char, OUTRO_TOPOFF_TIME_OUT)
+            ready = confirm_con_full(char) or topoff_concerto(char, OUTRO_TOPOFF_TIME_OUT)
             # log the RAW con next to the decision: a forced outro whose raw read
             # is 0.99 (full only via the angular rescue) is the suspect when the
             # in-game buff does not appear despite con_full=True.
@@ -262,7 +262,7 @@ def reactive_outro_topoff(char, kwargs, threshold=REACTIVE_TOPOFF_THRESHOLD,
                             allow_early_switch=not mandatory)
         else:
             char.continues_normal_attack(0.8, until_con_full=True)
-    if char.is_con_full():
+    if confirm_con_full(char):
         # Ground an aerial char before the outro so its buff lands (Iuno is
         # jump-native); wait_down returns at once if she is already grounded.
         if char.flying():
