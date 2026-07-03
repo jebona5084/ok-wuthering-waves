@@ -127,12 +127,14 @@ AGGRESSIVE_CANCEL_DEFAULT = True
 SWITCH_WHILE_BUILDING_CONFIG_KEY = 'Augusta Iuno SK Switch While Building'
 SWITCH_WHILE_BUILDING_DEFAULT = True
 
-# Brief idle before pressing the swap on an OUTRO hand-off, so the outgoing
-# char's last action (typically a heavy) finishes its active frames and the game
-# registers the swap as a clean outro. Log analysis showed outro swaps landing
-# ~0.7s after the final heavy PRESS -- mid-animation -- with the outro buff then
-# not appearing in game despite a verified-full ring.
-OUTRO_SWAP_SETTLE = 0.25
+# Brief idle before pressing the swap on an OUTRO hand-off. Originally 0.25s to
+# let the last animation finish, but the user-verified kit maps say every exit
+# action this team uses is SWAP-SAFE: Augusta's False Sovereign echo is meant to
+# be swap-cancelled right after cast, Iuno's Absolute Fullness completes and
+# transfers its buff even with the outro emitted during it, and all of
+# ShoreKeeper's kit (lib field, skill butterflies, Illation) persists off-field.
+# Keep only a token input-spacing gap so the swap key never races the last press.
+OUTRO_SWAP_SETTLE = 0.1
 
 # Even with switch-while-building ON, never bail out of a concerto top-off when
 # the ring is this close to full -- finishing it costs an action or two and wins

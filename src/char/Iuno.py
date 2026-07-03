@@ -70,7 +70,14 @@ class Iuno(BaseChar):
             self.do_everything()
 
     def jump_cancel(self):
-        """Jump-cancel Iuno's recovery/intro while the jump prompt is shown."""
+        """Press Space while the extra-action prompt shows.
+
+        Lunar Cycle key-remap gotcha (user-verified): once Iuno is in Lunar
+        Cycle, Space is NOT a jump -- it becomes Heavy Attack - Flux, the
+        Half Moon <-> New Moon state toggle (and hold-LMB becomes Absolute
+        Fullness at 100 concerto). The ``iuno_jump`` prompt in box_extra_action
+        is that Flux prompt, so pressing Space here is the moon-state flip the
+        rotation wants, not a movement jump."""
         while self.task.find_feature("iuno_jump", box="box_extra_action", threshold=0.6):
             self.task.jump(after_sleep=0.1)
 

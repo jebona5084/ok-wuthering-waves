@@ -98,6 +98,23 @@ class ShoreKeeper(BaseChar):
         Each beat spends ShoreKeeper's full concerto-building kit (echo, lib,
         skill, forte) so the ring is naturally full by the outro swap -- there is
         no busy-wait top-off, which would stall and break the rotation.
+
+        Quickswap contract (user-verified kit map) -- she is the swap-FRIENDLY
+        member of this team; her buffs are damage amplification that survives
+        switching, and the Stellarealm is designed to be left:
+        - Liberation (End Loop): canonical exit -- the field persists 30s at the
+          cast location regardless of her being on field; swap can follow the
+          cast immediately. (We front-load it instead so the field is up for her
+          own slot too -- per the kit, nothing is lost either way.)
+        - Resonance Skill (Chaos Theory): cast-and-leave; 20 concerto instant,
+          the butterflies track autonomously and the rest trickles in off-field.
+        - Forte heavy (Illation): safe once the hit registers; the converted
+          butterflies keep attacking after she leaves.
+        - Echo: standard swap-cancel, best right before the lib or the outro.
+        - Intro (Discernment): the one thing NOT to clip early -- let the
+          guaranteed-crit detonation land, then outro (_intro_wait covers this).
+        - Avoid leaving mid-basic-string (wastes Empirical Data generation, not
+          buffs) and never idle in Unbound Form (stamina-drain channel).
         """
         from src.combat.StrictRotation import basic_attacks, aggressive_cancel_enabled
         agg = aggressive_cancel_enabled(self.task)  # jump-cancel filler basics when on
