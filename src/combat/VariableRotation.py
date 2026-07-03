@@ -44,7 +44,7 @@ except Exception:  # pragma: no cover - exercised only when ``ok`` is unavailabl
     logger = logging.getLogger(__name__)
 
 from src.combat.StrictRotation import (
-    StrictRotation, OUTRO_TOPOFF_TIME_OUT, OUTRO_SWAP_SETTLE,
+    StrictRotation, OUTRO_BEAT_TOPOFF_TIME_OUT, OUTRO_SWAP_SETTLE,
     build_concerto, confirm_con_full, topoff_concerto, try_spend_forte,
     get_strict_rotation, _combat_control_exceptions,
 )
@@ -219,7 +219,14 @@ class VariableRotation(StrictRotation):
                 break  # ring already full -> stop early so the outro fires now
             self._dwell_fill(char, beat.outro)
         if beat.outro:
-            ready = confirm_con_full(char) or topoff_concerto(char, OUTRO_TOPOFF_TIME_OUT)
+            # MANDATORY top-off (no early-switch bail, bigger budget): the 1st
+            # rotation's outro beats ARE its buff hand-offs (user: 'sk should
+            # apply outro buff in 1st rotation') -- a miss silently drops the
+            # buff the following beats were sequenced around. Still exits the
+            # instant the ring confirms full.
+            ready = (confirm_con_full(char)
+                     or topoff_concerto(char, OUTRO_BEAT_TOPOFF_TIME_OUT,
+                                        allow_early_switch=False))
             # log the RAW con next to the decision: a forced outro whose raw read
             # is 0.99 (full only via the angular rescue) is the suspect when the
             # in-game buff does not appear despite con_full=True.

@@ -247,8 +247,8 @@ class TestStrictRotation(unittest.TestCase):
         sk.is_con_full = lambda: False  # never reaches full
         sk.switch_next_char = lambda *a, **k: events.append(('switch', a, k))
         rot.index = 6  # sk_open2, outro=True
-        # bound the top-off poll so the never-full case does not spin for 2.5s
-        with patch('src.combat.StrictRotation.OUTRO_TOPOFF_TIME_OUT', 0.02):
+        # bound the top-off poll so the never-full case does not spin for 6s
+        with patch('src.combat.StrictRotation.OUTRO_BEAT_TOPOFF_TIME_OUT', 0.02):
             self.assertTrue(rot.run_current(sk))
         # con never reached full -> plain swap (free_intro=False), no faked outro
         self.assertEqual(events, [('beat', 'sk_open2'), ('switch', (), {'free_intro': False})])

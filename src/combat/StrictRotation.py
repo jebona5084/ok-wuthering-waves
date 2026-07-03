@@ -111,6 +111,12 @@ LOOP_START = 10
 # instant the ring is full, so the rotation advances every beat (strict sequence)
 # and a quick fill returns immediately; the bound only caps the worst case.
 OUTRO_TOPOFF_TIME_OUT = 2.5
+# Scripted OUTRO beats are the cycle's buff hand-offs -- the 1st rotation's
+# design DEPENDS on them (user: 'sk should apply outro buff in 1st rotation').
+# They build with this bigger budget and NEVER bail to an early switch: a
+# missed opener outro silently drops the buff the following beats were
+# sequenced around (still exits the instant the ring confirms full).
+OUTRO_BEAT_TOPOFF_TIME_OUT = 6.0
 
 # Aggressive animation cancel: jump-cancel the last action's recovery on NON-outro
 # hand-offs so the swap is immediate. Outro hand-offs never cancel -- they ground
@@ -352,13 +358,16 @@ class StrictRotation:
             self.advance()
             raise
         # Strict sequence: always advance to the next beat (never stay/redo). On
-        # an OUTRO beat, briefly top concerto off to full first so the swap fires
-        # as a real outro that transfers the buff. The top-off is bounded by
-        # OUTRO_TOPOFF_TIME_OUT and exits the instant the ring is full, so it
-        # cannot stall the rotation; non-outro beats switch immediately.
+        # an OUTRO beat, top concerto off to full first so the swap fires as a
+        # real outro that transfers the buff -- MANDATORY (no early-switch bail,
+        # OUTRO_BEAT_TOPOFF_TIME_OUT budget): the 1st rotation's buff hand-offs
+        # are what the following beats are sequenced around. Exits the instant
+        # the ring confirms full; non-outro beats switch immediately.
         outro_ready = False
         if beat.outro:
-            outro_ready = confirm_con_full(char) or topoff_concerto(char, OUTRO_TOPOFF_TIME_OUT)
+            outro_ready = (confirm_con_full(char)
+                           or topoff_concerto(char, OUTRO_BEAT_TOPOFF_TIME_OUT,
+                                              allow_early_switch=False))
             logger.info(f'{self.LABEL} outro beat {beat.name}: con_full={outro_ready}')
         self._handoff(char, beat, outro_ready)
         return True
