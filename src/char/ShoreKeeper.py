@@ -145,20 +145,43 @@ class ShoreKeeper(BaseChar):
         self.spend_forte()
         self.switch_next_char()
 
+    # The GOLD blaze of her full forte bar (user screenshot: bright yellow
+    # segments, flame tips at both ends). Deliberately excludes the dim
+    # gray-white dashes of an uncharged bar (their blue channel is far above
+    # this cap) and the near-white forte_white_color glyph range.
+    FORTE_GOLD = {
+        'r': (200, 255),
+        'g': (150, 235),
+        'b': (30, 150)
+    }
+
+    def _forte_bar_glowing(self):
+        """Colour fallback measured for HER bar: the generic is_forte_full
+        checks NEAR-WHITE (244+/246+/250+) pixels, but SK's full bar blazes
+        GOLD -- the white check reads ~0 on it, which is why the first
+        fallback never fired either (log aeadc5b2: zero forte events again).
+        Measures the gold glow in the same right-end box; drawn on the overlay
+        as forte_gold_<pct> for live verification."""
+        box = self.task.box_of_screen_scaled(3840, 2160, 2251, 1993, 2311, 2016,
+                                             name='forte_gold', hcenter=True)
+        percent = self.task.calculate_color_percentage(self.FORTE_GOLD, box)
+        return percent > 0.12
+
     def is_mouse_forte_full(self):
-        """Template-first with a colour fallback (user report: 'sk doesn't hold
+        """Template-first with colour fallbacks (user report: 'sk doesn't hold
         mouse click to spend forte when its full').
 
         The mouse_forte TEMPLATE ships as a 1920-wide capture and upscales 2x
         blurrily on a 4K frame (FeatureSet load: original_width:1920,
-        scale_x:2.0), where the 0.6-threshold match can chronically miss -- a
-        visibly FULL bar then never triggers the held spend. The generic
-        is_forte_full colour check (white-glow percentage at the bar's right
-        end) needs no template, so a full bar is caught by either channel; both
-        read empty on an uncharged bar, so no false spends are added
-        (heavy_click_forte's hold also self-terminates if the gauge check
-        drops)."""
-        return bool(super().is_mouse_forte_full() or self.is_forte_full())
+        scale_x:2.0), where the 0.6-threshold match can chronically miss. The
+        GOLD-glow check is the fallback tuned to her actual full-bar rendering
+        (see _forte_bar_glowing); the generic white check stays as a third
+        channel. All read empty on an uncharged bar, so no false spends are
+        added (heavy_click_forte's hold also self-terminates if the gauge
+        check drops)."""
+        return bool(super().is_mouse_forte_full()
+                    or self._forte_bar_glowing()
+                    or self.is_forte_full())
 
     def spend_forte(self, check=None):
         """Illation (user request: 'if sk bar is full, hold mouse click and
