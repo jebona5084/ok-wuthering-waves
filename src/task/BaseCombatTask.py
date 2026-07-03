@@ -857,6 +857,10 @@ class BaseCombatTask(CombatCheck):
         has_intro = free_intro
         current_con = 0
         self.update_lib_portrait_icon()
+        # buff stamps land right before swaps (outro amps, SK's lib field):
+        # force a fresh overlay so the countdown reflects this swap immediately
+        self._last_buff_overlay = 0
+        self.update_buff_overlay()
         if not has_intro:
             current_con = current_char.get_current_con()
             if current_con > 0.8 and current_con != 1:
@@ -1054,9 +1058,48 @@ class BaseCombatTask(CombatCheck):
             return
         # self.log_debug(f'sleep_check {self._in_combat}')
         if self._in_combat:
+            self.update_buff_overlay()
             self.next_frame()
             if not self.in_combat():
                 self.raise_not_in_combat('sleep check not in combat')
+
+    # Refresh cadence of the on-screen buff countdown overlay. sleep_check runs
+    # on every action sleep while in combat, so the overlay ticks roughly twice
+    # a second without adding a hot-loop cost.
+    BUFF_OVERLAY_INTERVAL = 0.5
+
+    def update_buff_overlay(self):
+        """Draw the live team-buff countdowns on the debug overlay.
+
+        One labelled bar per tracked buff along the left edge of the screen,
+        in a FIXED order so each buff keeps its row. The label carries the
+        seconds remaining via the box-confidence suffix (the same formatting
+        the con_full box uses: 'buff_sk_outro_12' = 12s left), and the bar
+        WIDTH shrinks with the remaining fraction of the buff's duration --
+        an expired buff shows as a sliver labelled 0. Throttled by
+        BUFF_OVERLAY_INTERVAL; visible only with the debug overlay on.
+        """
+        now = time.time()
+        if now - getattr(self, '_last_buff_overlay', 0) < self.BUFF_OVERLAY_INTERVAL:
+            return
+        self._last_buff_overlay = now
+        from src.combat.BuffTracker import (get_buff_tracker, DURATIONS,
+                                            SK_LIBERATION, SK_OUTRO, IUNO_OUTRO,
+                                            IUNO_DOMAIN, AUGUSTA_OUTRO)
+        tracker = get_buff_tracker(self)
+        x = int(self.width_of_screen(0.012))
+        y0 = int(self.height_of_screen(0.30))
+        row_h = max(6, int(self.height_of_screen(0.016)))
+        max_w = max(20, int(self.width_of_screen(0.09)))
+        boxes = []
+        for i, name in enumerate((SK_LIBERATION, SK_OUTRO, IUNO_OUTRO,
+                                  IUNO_DOMAIN, AUGUSTA_OUTRO)):
+            remaining = tracker.remaining(name)
+            duration = DURATIONS.get(name) or 30.0
+            width = max(4, int(max_w * min(1.0, remaining / duration)))
+            boxes.append(Box(x, y0 + i * int(row_h * 1.8), width, row_h,
+                             confidence=remaining / 100.0, name=f'buff_{name}'))
+        self.draw_boxes('team_buffs', boxes)
 
     def check_combat(self):
         """检查当前是否处于战斗状态, 如果不是则抛出异常。"""
