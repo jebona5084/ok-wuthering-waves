@@ -9,6 +9,7 @@ class ShoreKeeper(BaseChar):
         self.outrotime = -1
         self.dodge_count = 0
         self.attribute = 0
+        self._last_forte_spend = 0.0
 
     def get_switch_priority(self, current_char=None, has_intro=False, target_low_con=False):
         from src.combat.VariableRotation import get_active_rotation
@@ -175,11 +176,19 @@ class ShoreKeeper(BaseChar):
         percent = self.task.calculate_color_percentage(self.FORTE_GOLD, box)
         return percent > 0.12
 
+    def _forte_read_suppressed(self):
+        """True while inside the post-spend backoff window (see
+        FORTE_SPEND_BACKOFF): the just-spent bar's fading blaze must not be
+        re-read as a fresh full."""
+        return time.time() - self._last_forte_spend < self.FORTE_SPEND_BACKOFF
+
     def is_forte_full(self):
         """Generic-name override so every generic forte site (try_spend_forte's
         default check, build_concerto's spend during outro top-offs) sees HER
         bar: the base white-glyph check reads ~0 on her GOLD blaze, which
         silently disabled all those sites for her."""
+        if self._forte_read_suppressed():
+            return False
         return bool(self._forte_bar_glowing() or super().is_forte_full())
 
     def is_mouse_forte_full(self):
@@ -193,6 +202,8 @@ class ShoreKeeper(BaseChar):
         override above) back it up. All read empty on an uncharged bar, so no
         false spends are added (heavy_click_forte's hold also self-terminates
         if the gauge check drops)."""
+        if self._forte_read_suppressed():
+            return False
         return bool(super().is_mouse_forte_full() or self.is_forte_full())
 
     # Illation hold tuning (user: 'sk hold attack dodge cancel should be a bit
@@ -203,6 +214,14 @@ class ShoreKeeper(BaseChar):
     FORTE_HOLD_MIN = 0.6       # keep the button down at least this long
     FORTE_CANCEL_DELAY = 0.5   # let the released hit register before cancelling
     FORTE_FILL_TIME_OUT = 12.0  # cap on the sk_forte opener pre-fill beat
+    # Suppress full reads this long after a spend: the blaze FADES over ~a
+    # second after the held heavy, and re-reading that fade as 'full again'
+    # chained back-to-back phantom holds (~3s each: 2s drain-wait + min hold +
+    # cancel settle) that burned the whole outro top-off budget without one
+    # build action (user: forte spending 'is prevent[ing] her from getting
+    # full concerto'). The bar takes far longer than this to genuinely refill,
+    # so nothing real is suppressed.
+    FORTE_SPEND_BACKOFF = 4.0
 
     def heavy_click_forte(self, check_fun=None):
         """Base hold + a MINIMUM hold time: release only once the gauge reads
@@ -236,6 +255,9 @@ class ShoreKeeper(BaseChar):
             # then cancel only the recovery
             self.sleep(self.FORTE_CANCEL_DELAY)
             self.dodge_cancel()
+            # arm the backoff so the fading blaze is not re-read as a fresh
+            # full and chained into another (phantom) hold
+            self._last_forte_spend = time.time()
         return held
 
     def _bind_augusta_outro(self):
