@@ -152,25 +152,37 @@ class Augusta(BaseChar):
                 post_action=self._build_majesty, time_out=4)
         if self.task.wait_until(self.check_majesty, post_action=self._build_majesty,
                                 time_out=majesty_time_out):
+            # Spinslash 2 -> 2nd Ultimate: with the lib2 icon confirmed lit, fire
+            # the spinslash (its hit lands within the call) and chain the ult
+            # right after -- the ult is the kit's cancel for the spinslash endlag.
+            self._heavy_or_prowess()
             return self.perform_majesty()
         self.logger.info('Augusta: lib2 (majesty, 2 stacks) never lit within '
                          f'{majesty_time_out}s, skipping 2nd lib')
         return False
 
     def _augusta_burst(self, with_basics):
-        # Augusta's kit (per the reference + guide): Resonance Skill -> 1st Resonance
-        # Liberation -> Griffin (Enhanced Resonance Skill, a 3-hit combo that builds
-        # Majesty energy) -> 2nd Resonance Liberation (Majesty-empowered) -> basics.
-        # The reference gates each lib on its ICON: lib 1 on liberation_available()
-        # (Augusta_lib1), lib 2 on check_majesty() (Augusta_lib2). Calling
-        # perform_majesty WITHOUT that gate is what caused 'not in animation' -- lib2
-        # was not lit yet. So follow the reference and gate on the icons.
-        from src.combat.StrictRotation import heavy, basic_attacks, aggressive_cancel_enabled
-        agg = aggressive_cancel_enabled(self.task)
-        # First heavy flows straight into the plunge skill -- do NOT cancel it, a
-        # jump here would disturb that transition.
-        self._heavy_or_prowess()                 # ha (charged/heavy)
-        self.click_resonance()                   # resonance skill (plunge)
+        # Augusta's kit contract (user-verified; community-derived timings -- if a
+        # game patch retunes endlag and Majesty stacks start dropping, re-verify
+        # these cancel points first):
+        # - CHAIN-cancel, never jump-cancel: Spinslash 1's endlag is cancelled by
+        #   the BASE RESONANCE SKILL, Spinslash 2's by the SECOND ULTIMATE. The
+        #   rule is "wait until the hit lands, then chain" -- each heavy call
+        #   returns after its press/hit, and the next ability is sent right after.
+        #   No jumps anywhere in her rotation (a jump can clip the damage; the
+        #   chain ability IS the kit's cancel).
+        # - NO character swap between Intro and the 2nd Ultimate: she plays under
+        #   an Amplify outro buff that a swap would end, and ~half her damage sits
+        #   before the 2nd Ultimate. The coordinator already keeps her on field
+        #   for the whole beat; nothing here may switch out early.
+        # - The ONE clean exit: 2nd Ultimate sequence -> one False Sovereign echo
+        #   -> Outro swap (the swap right after is the echo's cancel).
+        # Libs stay ICON-gated: lib 1 on liberation_available() (Augusta_lib1),
+        # lib 2 on check_majesty() (Augusta_lib2) -- casting unlit was the old
+        # 'not in animation' failure.
+        from src.combat.StrictRotation import basic_attacks
+        self._heavy_or_prowess()                 # Spinslash 1 (hit lands in-call)
+        self.click_resonance()                   # base skill -- cancels SS1 endlag
         # 1st Resonance Liberation -- fire when its icon (Augusta_lib1) is lit.
         if self.liberation_available():
             self.task.wait_until(lambda: not self.liberation_available(),
@@ -180,21 +192,15 @@ class Augusta(BaseChar):
         # the 2nd-liberation icon (Augusta_lib2).
         for _ in range(self.ENHANCED_SKILL_COUNT):
             self.click_resonance()               # griffin hit (x3)
-        # 2nd Resonance Liberation ("majesty"): needs 2 Majesty stacks (lights the
-        # lib2 icon). Build Iuno's buff to 10, then STAY and keep rotating until
-        # the icon lights -- do not give up and switch out with the buff window
-        # still live (see _build_and_cast_majesty).
-        self._build_and_cast_majesty()           # 2nd lib once Majesty is ready
-        # ha and the trailing basics are mid-sequence melee filler -- jump-cancel
-        # their (long) recovery when aggressive cancel is on to cut station time.
-        self._heavy_or_prowess(cancel=agg)       # ha
         if with_basics:
-            # forte_check: these basics are trailing filler AFTER the 2nd lib, so
-            # spending the prowess/enhanced heavy the instant it is up here is
-            # pure upside -- it cannot rob the Majesty build (already spent above).
-            basic_attacks(self, 3, forte_check=self.check_prowess, cancel=agg)  # ba123
-            heavy(self, cancel=agg)              # ha
-        self.send_echo_key()                     # echo
+            # buffed filler goes BEFORE the payoff -- nothing trails the 2nd ult.
+            basic_attacks(self, 3, forte_check=self.check_prowess)  # ba123
+        # 2nd Ultimate ("majesty"): build Iuno's buff to 10, keep rotating until
+        # the lib2 icon lights, then Spinslash 2 -> 2nd ult (the ult cancels the
+        # spinslash's endlag) -- see _build_and_cast_majesty.
+        self._build_and_cast_majesty()
+        self.send_echo_key()                     # False Sovereign echo -- the outro
+        #                                          swap right after is its cancel
 
     def _sk_outro_elapsed(self):
         """Freeze-adjusted seconds since ShoreKeeper's last con-full exit (which
