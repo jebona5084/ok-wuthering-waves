@@ -91,59 +91,42 @@ class Iuno(BaseChar):
         self.task.mouse_up()
 
     def _iuno_burst(self):
-        """Explicit burst: jump-cancel, lib, skill, ba1234, skill, ba, ha.
+        """Burst per Iuno's kit contract (user-verified):
 
-        The two skill casts are the point: each cast applies one of Iuno's buffs
-        to the next character (Augusta), so both must fire before the outro. The
-        generic do_everything returns right after Iuno's special heavy and does
-        not guarantee the second skill cast, which left Augusta with only one of
-        Iuno's two buffs.
+        - Arc Beyond the Edge (the resonance skill) is a CANCEL-INTO-ULTIMATE
+          node: cast it, let its projectiles fire (the post_sleep gate), then the
+          Ultimate cancels its endlag -- never clip the Arc before the
+          projectiles are out.
+        - Moonbow basics follow; P3 tolerates a swap after its first sub-hit, so
+          the string needs no trailing settle.
+        - The 2nd Arc charge is the swap-cancellable rotation FINISHER: the exit
+          machinery that follows (top-off -> Absolute Fullness -> outro) is its
+          cancel.
+        - Absolute Fullness (the held special heavy at 100 concerto) fires at the
+          EXIT, in switch_next_char: the outro swap is emitted DURING it -- it
+          completes and its buff transfers regardless.
+        - NO plain swap before the outro: she sheds her own stacks. Both skill
+          buffs must also land before the outro (the buff registers only once the
+          cast resolves), so no jumps around the skills -- an air-cast drops the
+          buff.
         """
-        from src.combat.StrictRotation import basic_attacks, heavy
+        from src.combat.StrictRotation import basic_attacks
         self.jump_cancel()
-        # wait_if_cd_ready=0.5: the burst is a single lib attempt, so give a
-        # finishing-cooldown liberation a brief chance to come up and fire instead
-        # of skipping it for the whole burst. (If lib is genuinely not ready -- not
-        # enough energy, or the lit icon is not being captured -- it still no-ops;
-        # for the latter, use the WGC capture method, not BitBlt.)
+        # Arc #1: buff 1 applies; post_sleep is the projectiles-fired gate.
+        cast1 = self.click_resonance(post_sleep=0.4)
+        # Ultimate right after -- it is the kit's cancel for the Arc's endlag.
+        # wait_if_cd_ready=0.5 gives a finishing-cooldown lib a brief chance to
+        # come up; a genuinely unready lib no-ops and the rotation continues.
         self.click_liberation(wait_if_cd_ready=0.5)
-        # Iuno's skill has TWO charges, so both casts are available back-to-back --
-        # no cooldown wait is needed between them. Each cast applies one of Iuno's
-        # buffs, and the buff only registers once the cast resolves, so: (1) do NOT
-        # animation-cancel around the skills -- a jump puts Iuno airborne and the
-        # air-cast drops its buff; (2) use click_resonance (the registered cast the
-        # other Iuno beats use) rather than a bare key send, and check both fired.
-        # Both must land or the outro carries only one buff and Augusta comes in
-        # under-buffed.
-        cast1 = self.click_resonance(post_sleep=0.4)      # skill charge 1 -> buff 1
-        basic_attacks(self, 4)                            # ba1234 (no cancel)
-        # 2nd charge: a 2-charge skill shows a RECHARGE cooldown on its icon right
-        # after charge 1, so resonance_available()/has_cd false-negatives and the
-        # gated click_resonance skipped the 2nd cast on 18 of 19 bursts -- Iuno then
-        # under-generated concerto AND only carried one of her two buffs to Augusta.
-        # The charge is actually available, so FORCE the cast with a direct key send
-        # rather than gating on the CD detection (harmless no-op if truly empty).
-        self.send_resonance_key(post_sleep=0.4)           # skill charge 2 -> buff 2
+        basic_attacks(self, 4)                            # Moonbow string
+        # Arc #2 -> buff 2, the finisher. A 2-charge skill shows a RECHARGE
+        # cooldown right after charge 1, so resonance_available() false-negatives
+        # and a gated cast skipped it on 18 of 19 bursts -- FORCE the cast with a
+        # direct key send (harmless no-op if truly empty).
+        self.send_resonance_key(post_sleep=0.4)           # projectiles-fired gate
         self.logger.info(f'Iuno burst skills: cast1={bool(cast1[0])} cast2=forced')
-        basic_attacks(self, 1)                            # ba
-        # ha: Iuno's special heavy (the extra-action prompt) applies a buff that
-        # transfers on the outro. It is a 20s-cooldown move, so only chase it when
-        # it is actually off cooldown; otherwise a plain heavy.
-        #
-        # Delegate the build+detect+fire to do_everything -- the battle-tested loop
-        # that builds forte (echo/lib/skill/basics), jumps to go aerial (the
-        # extra-action slot only shows the iuno_heavy prompt once she is airborne),
-        # and fires the special heavy, looping until it lands or the window elapses.
-        # The earlier bespoke window caught it only "sometimes" because 3s of
-        # basics rarely built enough forte to light the prompt; do_everything
-        # builds harder (echo/lib) and polls longer, so it lands far more often.
-        # The two buff-skills are already cast above, so its only job here is the
-        # heavy. force_complete keeps it going through the aerial jump.
-        if self.time_elapsed_accounting_for_freeze(self.last_heavy) > 20:
-            self.do_everything(time_out=4, force_complete=True)
-        else:
-            self.logger.info('Iuno burst: special heavy on cooldown, generic heavy')
-            heavy(self)
+        # Exit: the dwell/top-off brings concerto to 100, then switch_next_char
+        # fires Absolute Fullness and emits the outro during it.
 
     def do_everything(self, time_out=1.5, force_complete=False):
         if self.has_intro:
@@ -170,10 +153,9 @@ class Iuno(BaseChar):
                 heavy_success = True
             if heavy_success:
                 self.last_heavy = time.time()
-                # Settle so the special-heavy BUFF registers before the caller
-                # acts on it. The heavy is now HELD to completion (the real apply
-                # mechanic), so a short 0.35s tail suffices.
-                self.sleep(0.35)
+                # No settle: Absolute Fullness completes and its buff transfers
+                # even when the swap lands during it (kit contract), so the
+                # caller may switch out immediately.
                 if not c6_performed and self.is_c6():
                     c6_performed = True
                     start = time.time()
@@ -208,10 +190,12 @@ class Iuno(BaseChar):
 
     def switch_next_char(self, *args, **kwargs):
         # Order matters: build concerto to FULL first (reactive top-off -- her
-        # outro also needs it), because the special heavy's buff ONLY applies at
-        # 100 concerto. Then, at full, HOLD-fire the heavy if its prompt is up
-        # and off its 20s cooldown, and leave via the forced outro so both the
-        # heavy buff and the outro buffs ride to Augusta.
+        # outro also needs it), because Absolute Fullness's buff ONLY applies at
+        # 100 concerto. Then, at full, HOLD-fire it if its prompt is up and off
+        # its 20s cooldown, and leave via the forced outro DURING the animation
+        # (it completes and the buff transfers regardless). A plain swap before
+        # the outro sheds her own stacks, so the mandatory top-off exists to turn
+        # as many exits as possible into outros.
         from src.combat.VariableRotation import reactive_outro_topoff
         reactive_outro_topoff(self, kwargs, threshold=0.6, aggressive=True,
                               mandatory=True)
@@ -221,8 +205,10 @@ class Iuno(BaseChar):
                                            threshold=0.55)):
             self._hold_special_heavy()
             self.last_heavy = time.time()
-            self.sleep(0.35)
-            self.logger.info('Iuno: special heavy held at full concerto on switch-out')
+            # NO settle: the outro swap is emitted DURING Absolute Fullness --
+            # it completes and its buff transfers regardless (kit contract).
+            self.logger.info('Iuno: Absolute Fullness held at 100 concerto; '
+                             'outroing during it')
         return super().switch_next_char(*args, **kwargs)
 
     def on_combat_end(self, chars):
