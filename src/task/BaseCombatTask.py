@@ -49,6 +49,44 @@ mismatched_names = {
 # recalibrate the baseline.
 CON_FULL_MAX_RATIO = 1.2
 
+# Concerto-ring angular analysis (see con_ring_metrics):
+# - a full ring must cover this fraction of the circle as ONE CONTIGUOUS arc
+CON_RING_COVERAGE_FULL = 0.93
+# - an area-based "full" is VETOED when the contiguous arc is below this (the
+#   ring is visibly incomplete no matter what the pixel count says)
+CON_RING_VETO_ARC = 0.90
+# - the frame is treated as VFX-POLLUTED when more than this fraction of the
+#   ring-coloured pixels sit OUTSIDE the annulus band; a real ring concentrates
+#   its pixels inside the band, a screen flash floods the whole crop
+CON_RING_POLLUTION_MAX = 0.5
+# - partial reads: when the clean-frame arc and the calibrated-area percent
+#   disagree by more than this, trust the arc (a stale/poisoned baseline skews
+#   the area percent; the arc needs no calibration)
+CON_RING_DISAGREE = 0.2
+
+
+def _largest_arc_run(covered):
+    """Length of the longest CONTIGUOUS run of covered sectors on a circle.
+
+    ``covered`` is a boolean sequence of angular bins. The concerto ring fills as
+    one contiguous arc, so its true fill is the longest run -- scattered VFX
+    speckles light isolated sectors but cannot extend the contiguous arc.
+    """
+    n = len(covered)
+    if n == 0:
+        return 0
+    if all(covered):
+        return n
+    # rotate so index 0 is an uncovered bin -> no run wraps the boundary
+    first_gap = next(i for i, c in enumerate(covered) if not c)
+    rolled = [covered[(first_gap + i) % n] for i in range(n)]
+    max_run = run = 0
+    for c in rolled:
+        run = run + 1 if c else 0
+        if run > max_run:
+            max_run = run
+    return max_run
+
 
 class BaseCombatTask(CombatCheck):
     """基础战斗任务类，封装了游戏"鸣潮"中角色自动化操作的通用逻辑。"""
@@ -942,6 +980,12 @@ class BaseCombatTask(CombatCheck):
             if area > max_area:
                 max_area = int(area)
         baseline = self.con_full_size[str(target_index)]
+        # Angular metrics for the same crop (see con_ring_metrics): the contiguous
+        # covered arc is the geometric concerto fraction (no baseline to poison),
+        # and a high outside fraction marks the frame as flooded by VFX.
+        ring_color = con_colors[target_index] if 0 <= target_index < len(con_colors) else con_colors[0]
+        arc, outside = self.con_ring_metrics(cropped, ring_color)
+        polluted = outside > CON_RING_POLLUTION_MAX
         if max_is_full and baseline > 0 and max_area > baseline * CON_FULL_MAX_RATIO:
             # A ring area FAR above the calibrated full size is not a bigger ring,
             # it is bright VFX flooding the ring box (e.g. the f-break burst read
@@ -952,6 +996,13 @@ class BaseCombatTask(CombatCheck):
             self.logger.warning(
                 f'is_con_full area {max_area} is {max_area / baseline:.2f}x the calibrated '
                 f'full size -- VFX pollution, treating as not full')
+            max_is_full = False
+        if max_is_full and (polluted or arc < CON_RING_VETO_ARC):
+            # count_rings says full, but the ring is visibly incomplete (arc) or
+            # the frame is flooded (pollution) -- an area-based false positive
+            # (user footage caught one right after an f-break). Veto it.
+            self.logger.warning(
+                f'is_con_full area-full VETOED: arc={arc:.2f} outside={outside:.2f}')
             max_is_full = False
         if max_is_full:
             percent = 1
@@ -964,23 +1015,27 @@ class BaseCombatTask(CombatCheck):
             # did not confirm a closed ring (a transient VFX gap, or the
             # contour-convexity check in is_full_ring failing). That false negative
             # capped a genuinely full ring at 0.99, and since is_con_full requires
-            # exactly 1 the outro never fired. Confirm fullness by angular coverage
-            # instead: a real full ring has ring-coloured pixels spanning the whole
-            # 360 deg annulus, whereas a partial ring leaves a large angular gap.
-            # BOUNDED: the rescue exists for the ~1.0x-area false NEGATIVE. An area
-            # ratio above CON_FULL_MAX_RATIO is VFX pollution -- during a flash the
-            # angular check also sees 72/72 (the flash covers every sector), so it
-            # must not be allowed to confirm such a read as full.
-            color_range = con_colors[target_index] if 0 <= target_index < len(con_colors) else con_colors[0]
-            if percent <= CON_FULL_MAX_RATIO and self.con_ring_angularly_full(cropped, color_range):
-                self.logger.info(f'is_con_full confirmed full by angular coverage ({percent:.2f})')
+            # exactly 1 the outro never fired. Confirm fullness by the contiguous
+            # arc instead -- BOUNDED: only for a plausible area ratio and a clean
+            # (unpolluted) frame, since a flash lights every sector too.
+            if (percent <= CON_FULL_MAX_RATIO and not polluted
+                    and arc >= CON_RING_COVERAGE_FULL):
+                self.logger.info(f'is_con_full confirmed full by angular arc ({percent:.2f})')
                 percent = 1
                 max_is_full = True
                 self.con_full_size[str(target_index)] = max_area
             else:
                 self.logger.warning(
-                    f'is_con_full not full but percent greater than 1, set to 0.99, {percent} {max_is_full}')
+                    f'is_con_full not full but percent greater than 1, set to 0.99, '
+                    f'{percent} {max_is_full} arc={arc:.2f} outside={outside:.2f}')
                 percent = 0.99
+        if not max_is_full and not polluted and abs(percent - arc) > CON_RING_DISAGREE:
+            # Partial reads: the calibrated-area percent disagrees badly with the
+            # geometric arc on a clean frame -- a stale/poisoned baseline (or area
+            # noise) is skewing it. The arc needs no calibration; trust it.
+            self.logger.info(
+                f'is_con_full partial corrected by arc: area={percent:.2f} -> {arc:.2f}')
+            percent = min(arc, 0.99)
         if percent > 1:
             self.logger.error(f'is_con_full percent greater than 1, set to 1, {percent} {max_is_full}')
             percent = 1
@@ -991,24 +1046,23 @@ class BaseCombatTask(CombatCheck):
             percent = 1
         return percent
 
-    def con_ring_angularly_full(self, cropped, color_range, sectors=72, coverage=0.93):
-        """Frame analysis: does the concerto ring span (nearly) the full circle?
+    def con_ring_metrics(self, cropped, color_range, sectors=72):
+        """Frame analysis of the concerto ring: (contiguous arc fraction,
+        pollution fraction).
 
-        Splits the annulus into ``sectors`` angular bins and reports the fraction
-        of bins that contain ring-coloured pixels. A genuinely full ring covers
-        them all; a partial ring (e.g. 130 deg) leaves a large contiguous gap. This
-        is robust to the small VFX gaps and contour-detection false negatives that
-        otherwise capped a full ring at 0.99 and stopped the outro from firing.
+        The ring fills as ONE CONTIGUOUS arc, so the longest covered arc IS the
+        concerto fraction geometrically -- no calibrated full-size baseline that
+        can drift or be poisoned. Scattered VFX speckles light isolated angular
+        bins but cannot extend the contiguous arc.
 
-        Args:
-            cropped (numpy.ndarray): the concerto-box crop (same one count_rings uses).
-            color_range (dict): the ring colour range for the current character.
-            sectors (int): number of angular bins around the circle.
-            coverage (float): fraction of bins that must be filled to count as full
-                (``0.93`` tolerates a few VFX-blanked sectors but rejects real partials).
+        Also reports how much of the ring-coloured mask sits OUTSIDE the annulus
+        band: a real ring concentrates its pixels inside the band, whereas a
+        screen flash (f-break burst etc.) floods the whole crop -- a high outside
+        fraction means the frame cannot be trusted for a FULL verdict.
 
         Returns:
-            bool: True if the ring is angularly (nearly) complete.
+            tuple(float, float): (largest contiguous covered arc as a fraction of
+            the circle, fraction of matching pixels outside the annulus).
         """
         h, w = cropped.shape[:2]
         cx, cy = w / 2.0, h / 2.0
@@ -1017,19 +1071,30 @@ class BaseCombatTask(CombatCheck):
         mask = cv2.inRange(cropped, lower_bound, upper_bound)
         ys, xs = np.nonzero(mask)
         if len(xs) == 0:
-            return False
+            return 0.0, 0.0
         dx = xs - cx
         dy = ys - cy
         dist = np.sqrt(dx * dx + dy * dy)
         in_annulus = (dist >= r_inner) & (dist <= r_outer)
-        if not np.any(in_annulus):
-            return False
+        inside = int(np.count_nonzero(in_annulus))
+        outside_fraction = 1.0 - inside / len(xs)
+        if inside == 0:
+            return 0.0, outside_fraction
         angles = np.arctan2(dy[in_annulus], dx[in_annulus])  # -pi..pi
         bins = ((angles + np.pi) / (2 * np.pi) * sectors).astype(np.int64) % sectors
-        covered = np.unique(bins).size
-        full = covered >= sectors * coverage
-        self.log_debug(f'con_ring_angularly_full covered={covered}/{sectors} full={full}')
-        return full
+        covered = [False] * sectors
+        for b in np.unique(bins):
+            covered[int(b)] = True
+        arc = _largest_arc_run(covered) / sectors
+        self.log_debug(f'con_ring_metrics arc={arc:.2f} outside={outside_fraction:.2f}')
+        return arc, outside_fraction
+
+    def con_ring_angularly_full(self, cropped, color_range, sectors=72,
+                                coverage=CON_RING_COVERAGE_FULL):
+        """Whether the ring is angularly (nearly) complete AND the frame is clean
+        enough to trust (see con_ring_metrics)."""
+        arc, outside = self.con_ring_metrics(cropped, color_range, sectors)
+        return arc >= coverage and outside <= CON_RING_POLLUTION_MAX
 
     def count_rings(self, image, color_range, min_area):
         """在指定图像区域内计算特定颜色范围的能量环数量和状态。
