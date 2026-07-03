@@ -34,6 +34,26 @@ class ShoreKeeper(BaseChar):
         if (current_name in {'Iuno', 'char_iuno'}
                 and 0 <= self.time_elapsed_accounting_for_freeze(self.last_switch_time) < 6):
             return SwitchPriority.NO
+        # FIELD-TIME ECONOMY (user: 'shorekeeper is wasting field time, only
+        # switch to her when necessary'): while BOTH her contributions are
+        # comfortably live -- the Stellarealm field and her outro amp -- a
+        # visit adds nothing the team needs; cede the slot (NO) so Augusta and
+        # Iuno keep the field. When either drops inside the refresh margin she
+        # competes normally again, fields, and refreshes it (her lib is
+        # front-loaded on every visit). Her MUST claim on Augusta's con-full
+        # exit is checked ABOVE, so the +1-Majesty outro chain and the burst
+        # cycle are unaffected; cold start (tracker never saw her lib) is
+        # unaffected too.
+        try:
+            from src.combat.BuffTracker import (get_buff_tracker,
+                                                SK_LIBERATION, SK_OUTRO)
+            tracker = get_buff_tracker(self.task)
+            if (tracker.has(SK_LIBERATION)
+                    and tracker.remaining(SK_LIBERATION) > 10
+                    and tracker.remaining(SK_OUTRO) > 10):
+                return SwitchPriority.NO
+        except Exception:
+            self.logger.debug('SK field-time economy check failed', exc_info=True)
         return super().get_switch_priority(current_char, has_intro, target_low_con)
 
     def skip_combat_check(self):
