@@ -53,7 +53,10 @@ TEAM = frozenset({'Augusta', 'Iuno', 'ShoreKeeper'})
 #   char  : class name of the character that must be on field for this beat
 #   intro : True when this beat is entered through an intro (previous beat outro'd)
 #   outro : True when this beat builds concerto to full and leaves via an outro
-Beat = namedtuple('Beat', ['name', 'char', 'intro', 'outro'])
+#   topoff: per-beat outro top-off budget in seconds; None uses the global
+#           OUTRO_BEAT_TOPOFF_TIME_OUT (see there for why SK's beats override it)
+Beat = namedtuple('Beat', ['name', 'char', 'intro', 'outro', 'topoff'],
+                  defaults=(None,))
 
 # The rotation, transcribed from the user's step list.
 #
@@ -77,6 +80,13 @@ Beat = namedtuple('Beat', ['name', 'char', 'intro', 'outro'])
 #    15  Aug  ha, lib (griffin), skill, ha, 2nd lib, ba123, ha, echo, outro
 #    16  Sk   super intro, build concerto, outro  -> back to 11
 #
+# ShoreKeeper's outro beats get a longer, dedicated top-off budget than the
+# (user-tuned, short) global OUTRO_BEAT_TOPOFF_TIME_OUT: her outro buff is what
+# the 1st rotation's following beats are sequenced around, and closing her ring
+# takes a few seconds of echo/skill build (user: 'in the 1st rotation sk doesnt
+# apply outro buff' after tuning the global budget down to 1.0).
+SK_OUTRO_BEAT_TOPOFF_TIME_OUT = 6.0
+
 # ``intro`` of beat N always equals ``outro`` of beat N-1 (with loop wraparound),
 # i.e. an outro on one beat hands the next beat its intro.
 BEATS = [
@@ -87,36 +97,42 @@ BEATS = [
     Beat('iuno_open2',  'Iuno',        intro=False, outro=False),
     Beat('aug_open2',   'Augusta',     intro=False, outro=False),
     Beat('iuno_open3',  'Iuno',        intro=False, outro=False),
-    Beat('sk_open2',    'ShoreKeeper', intro=False, outro=True),
+    Beat('sk_open2',    'ShoreKeeper', intro=False, outro=True,
+         topoff=SK_OUTRO_BEAT_TOPOFF_TIME_OUT),
     Beat('iuno_burst',  'Iuno',        intro=True,  outro=True),
     Beat('aug_burst',   'Augusta',     intro=True,  outro=True),
-    Beat('sk_intro',    'ShoreKeeper', intro=True,  outro=True),
+    Beat('sk_intro',    'ShoreKeeper', intro=True,  outro=True,
+         topoff=SK_OUTRO_BEAT_TOPOFF_TIME_OUT),
     # loop
     Beat('aug_loop1',   'Augusta',     intro=True,  outro=False),
     Beat('iuno_loop1',  'Iuno',        intro=False, outro=False),
     Beat('aug_loop2',   'Augusta',     intro=False, outro=False),
     Beat('iuno_burst2', 'Iuno',        intro=False, outro=True),
     Beat('aug_burst2',  'Augusta',     intro=True,  outro=True),
-    Beat('sk_loop',     'ShoreKeeper', intro=True,  outro=True),
+    Beat('sk_loop',     'ShoreKeeper', intro=True,  outro=True,
+         topoff=SK_OUTRO_BEAT_TOPOFF_TIME_OUT),
 ]
 
 # Index of the first loop beat; ``advance`` wraps here instead of to 0 so the
 # opener is never replayed mid-combat.
 LOOP_START = 10
 
-# Before an OUTRO beat hands off, briefly top concerto off to full so the swap is
-# read as a coordinated outro (which transfers the character's buff). The top-off
-# now builds concerto with real actions (lib/echo/skill, see build_concerto), so
-# allow enough time for one of those to animate and land -- but it still exits the
-# instant the ring is full, so the rotation advances every beat (strict sequence)
-# and a quick fill returns immediately; the bound only caps the worst case.
-OUTRO_TOPOFF_TIME_OUT = 2.5
-# Scripted OUTRO beats are the cycle's buff hand-offs -- the 1st rotation's
-# design DEPENDS on them (user: 'sk should apply outro buff in 1st rotation').
-# They build with this bigger budget and NEVER bail to an early switch: a
-# missed opener outro silently drops the buff the following beats were
-# sequenced around (still exits the instant the ring confirms full).
-OUTRO_BEAT_TOPOFF_TIME_OUT = 6.0
+# Reactive-phase (post-opener) outro top-off budget: finish a near-full ring
+# before a swap so it outros. Kept SHORT (user-tuned: 'OUTRO_TOPOFF_TIME_OUT =
+# 1.0 ... seems to do the rotation well after 1st rotation') -- a long grind
+# here stalls the reactive flow; buff-critical outros get the longer mandatory
+# budget instead (see reactive_outro_topoff in VariableRotation).
+OUTRO_TOPOFF_TIME_OUT = 1.0
+# Scripted OUTRO beats top off with this budget and NEVER bail to an early
+# switch. Also user-tuned to 1.0: Iuno's and Augusta's opener beats end near
+# full anyway, so a longer budget only stalled the opener. The exception is
+# ShoreKeeper -- her outro beats carry the buffs the following beats are
+# sequenced around, and she needs a few seconds of echo/skill build to close
+# the ring (user: 'in the 1st rotation sk doesnt apply outro buff'), so her
+# beats override per-beat with SK_OUTRO_BEAT_TOPOFF_TIME_OUT. Every top-off
+# still exits the instant the ring confirms full; the budget only caps the
+# worst case.
+OUTRO_BEAT_TOPOFF_TIME_OUT = 1.0
 
 # Aggressive animation cancel: jump-cancel the last action's recovery on NON-outro
 # hand-offs so the swap is immediate. Outro hand-offs never cancel -- they ground
@@ -360,13 +376,15 @@ class StrictRotation:
         # Strict sequence: always advance to the next beat (never stay/redo). On
         # an OUTRO beat, top concerto off to full first so the swap fires as a
         # real outro that transfers the buff -- MANDATORY (no early-switch bail,
-        # OUTRO_BEAT_TOPOFF_TIME_OUT budget): the 1st rotation's buff hand-offs
-        # are what the following beats are sequenced around. Exits the instant
-        # the ring confirms full; non-outro beats switch immediately.
+        # per-beat budget falling back to OUTRO_BEAT_TOPOFF_TIME_OUT): the 1st
+        # rotation's buff hand-offs are what the following beats are sequenced
+        # around. Exits the instant the ring confirms full; non-outro beats
+        # switch immediately.
         outro_ready = False
         if beat.outro:
+            budget = beat.topoff or OUTRO_BEAT_TOPOFF_TIME_OUT
             outro_ready = (confirm_con_full(char)
-                           or topoff_concerto(char, OUTRO_BEAT_TOPOFF_TIME_OUT,
+                           or topoff_concerto(char, budget,
                                               allow_early_switch=False))
             logger.info(f'{self.LABEL} outro beat {beat.name}: con_full={outro_ready}')
         self._handoff(char, beat, outro_ready)

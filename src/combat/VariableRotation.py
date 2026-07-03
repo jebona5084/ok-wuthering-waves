@@ -44,7 +44,8 @@ except Exception:  # pragma: no cover - exercised only when ``ok`` is unavailabl
     logger = logging.getLogger(__name__)
 
 from src.combat.StrictRotation import (
-    StrictRotation, OUTRO_BEAT_TOPOFF_TIME_OUT, OUTRO_SWAP_SETTLE,
+    StrictRotation, OUTRO_BEAT_TOPOFF_TIME_OUT, OUTRO_TOPOFF_TIME_OUT,
+    OUTRO_SWAP_SETTLE,
     build_concerto, confirm_con_full, topoff_concerto, try_spend_forte,
     get_strict_rotation, _combat_control_exceptions,
 )
@@ -219,13 +220,16 @@ class VariableRotation(StrictRotation):
                 break  # ring already full -> stop early so the outro fires now
             self._dwell_fill(char, beat.outro)
         if beat.outro:
-            # MANDATORY top-off (no early-switch bail, bigger budget): the 1st
-            # rotation's outro beats ARE its buff hand-offs (user: 'sk should
-            # apply outro buff in 1st rotation') -- a miss silently drops the
-            # buff the following beats were sequenced around. Still exits the
-            # instant the ring confirms full.
+            # MANDATORY top-off (no early-switch bail): the 1st rotation's
+            # outro beats ARE its buff hand-offs (user: 'sk should apply outro
+            # buff in 1st rotation') -- a miss silently drops the buff the
+            # following beats were sequenced around. Per-beat budget (SK's
+            # beats get the longer SK_OUTRO_BEAT_TOPOFF_TIME_OUT; the rest the
+            # short user-tuned global). Still exits the instant the ring
+            # confirms full.
+            budget = beat.topoff or OUTRO_BEAT_TOPOFF_TIME_OUT
             ready = (confirm_con_full(char)
-                     or topoff_concerto(char, OUTRO_BEAT_TOPOFF_TIME_OUT,
+                     or topoff_concerto(char, budget,
                                         allow_early_switch=False))
             # log the RAW con next to the decision: a forced outro whose raw read
             # is 0.99 (full only via the angular rescue) is the suspect when the
@@ -308,7 +312,11 @@ def reactive_outro_topoff(char, kwargs, threshold=REACTIVE_TOPOFF_THRESHOLD,
     con = char.get_current_con()
     if threshold <= con < 1:
         if aggressive:
-            topoff_concerto(char, 4.0 if mandatory else 2.5,
+            # Mandatory outros (buffs the team cycle depends on) keep the
+            # longer build budget; ordinary near-full finishes use the short
+            # user-tuned OUTRO_TOPOFF_TIME_OUT so the reactive flow never
+            # stalls long on a ring that refuses to close.
+            topoff_concerto(char, 4.0 if mandatory else OUTRO_TOPOFF_TIME_OUT,
                             allow_early_switch=not mandatory)
         else:
             char.continues_normal_attack(0.8, until_con_full=True)
