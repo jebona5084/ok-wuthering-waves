@@ -22,13 +22,17 @@ class Augusta(BaseChar):
     IUNO_BUFF_TARGET = 10
     # Augusta's big burst must ride BOTH support buffs. SK's outro buff has no
     # badge to OCR, so it is tracked by recency of her last con-full exit
-    # (ShoreKeeper.outrotime); the buff lasts ~30s, use a safety margin.
-    SK_BUFF_WINDOW = 25
-    # Iuno's buff window after her outro (~14s -- the reactive engine's own
-    # extended-intro time_out). Recency is the PRIMARY detector: at 1 stack her
-    # badge shows NO digit, so the OCR reads 0 right when the buff is freshest
-    # (log f8c2363e: iuno=False on every gate check while she visibly had it).
-    IUNO_BUFF_WINDOW = 13
+    # (ShoreKeeper.outrotime). The buff lasts ~30s of GAME time and the elapsed
+    # here is freeze-adjusted (same clock), so use nearly the full duration: a
+    # 25s window discarded a burst-ready Augusta (0.95 con, lib2 lit) at ~27s
+    # elapsed while the buff was visibly still active (log 02:16:37), and the
+    # rotation then ping-ponged as the two buff windows never overlapped.
+    SK_BUFF_WINDOW = 29
+    # Iuno's buff after her outro: the engine's extended-intro FIELD window is
+    # 14s, but the buff itself outlasts it a little; 15s with margin. Recency is
+    # the PRIMARY detector: at 1 stack her badge shows NO digit, so the OCR
+    # reads 0 right when the buff is freshest (log f8c2363e).
+    IUNO_BUFF_WINDOW = 15
     # Escape hatch: never hold a lit 2nd lib hostage forever -- if the buffs are
     # still not both up after this long, burst anyway rather than waste it.
     MAJESTY_HOLD_MAX = 40
@@ -192,28 +196,36 @@ class Augusta(BaseChar):
             heavy(self, cancel=agg)              # ha
         self.send_echo_key()                     # echo
 
-    def _sk_buff_active(self):
-        """ShoreKeeper's outro buff is (approximately) live: she exited con-full
-        (which stamps her ``outrotime``) within the last SK_BUFF_WINDOW seconds."""
+    def _sk_outro_elapsed(self):
+        """Freeze-adjusted seconds since ShoreKeeper's last con-full exit (which
+        stamps her ``outrotime``); inf when she never outro'd."""
         from src.char.ShoreKeeper import ShoreKeeper
         for char in self.task.chars:
             if isinstance(char, ShoreKeeper):
-                return char.time_elapsed_accounting_for_freeze(char.outrotime) < self.SK_BUFF_WINDOW
-        return False
+                return char.time_elapsed_accounting_for_freeze(char.outrotime)
+        return float('inf')
+
+    def _iuno_outro_elapsed(self):
+        """Freeze-adjusted seconds since Iuno's last outro (the engine stamps
+        ``last_outro_time`` on her con-full exits); inf when she never outro'd."""
+        from src.char.Iuno import Iuno
+        for char in self.task.chars:
+            if isinstance(char, Iuno):
+                return char.time_elapsed_accounting_for_freeze(char.last_outro_time)
+        return float('inf')
+
+    def _sk_buff_active(self):
+        """ShoreKeeper's outro buff is (approximately) live."""
+        return self._sk_outro_elapsed() < self.SK_BUFF_WINDOW
 
     def _iuno_buff_active(self):
         """Iuno's buff is on Augusta.
 
-        PRIMARY: Iuno outro'd within the last IUNO_BUFF_WINDOW seconds -- the
-        engine stamps ``last_outro_time`` on her con-full exits. The badge OCR is
-        only a confirming fallback: at 1 stack the badge shows no digit and reads
-        0, exactly when the buff is freshest, so it must not be the gate."""
-        from src.char.Iuno import Iuno
-        for char in self.task.chars:
-            if isinstance(char, Iuno):
-                if char.time_elapsed_accounting_for_freeze(char.last_outro_time) < self.IUNO_BUFF_WINDOW:
-                    return True
-                break
+        PRIMARY: outro recency. The badge OCR is only a confirming fallback: at
+        1 stack the badge shows no digit and reads 0, exactly when the buff is
+        freshest, so it must not be the gate."""
+        if self._iuno_outro_elapsed() < self.IUNO_BUFF_WINDOW:
+            return True
         return self.iuno_buff_stacks() >= 1
 
     def _team_buffs_ready(self):
@@ -226,18 +238,21 @@ class Augusta(BaseChar):
         forever."""
         iuno_ok = self._iuno_buff_active()
         sk_ok = self._sk_buff_active()
+        detail = (f'iuno={iuno_ok} ({self._iuno_outro_elapsed():.0f}s ago, win '
+                  f'{self.IUNO_BUFF_WINDOW}) sk={sk_ok} ({self._sk_outro_elapsed():.0f}s '
+                  f'ago, win {self.SK_BUFF_WINDOW})')
         if iuno_ok and sk_ok:
             self._majesty_wait_start = -1.0
             return True
         now = time.time()
         if self._majesty_wait_start < 0:
             self._majesty_wait_start = now
-            self.logger.info(f'Augusta: holding 2nd lib for team buffs '
-                             f'(iuno={iuno_ok} sk={sk_ok})')
+            self.logger.info(f'Augusta: holding 2nd lib for team buffs ({detail})')
+        else:
+            self.logger.debug(f'Augusta: still holding 2nd lib ({detail})')
         if now - self._majesty_wait_start > self.MAJESTY_HOLD_MAX:
             self.logger.info(f'Augusta: team buffs still missing after '
-                             f'{self.MAJESTY_HOLD_MAX}s (iuno={iuno_ok} sk={sk_ok}), '
-                             f'bursting anyway')
+                             f'{self.MAJESTY_HOLD_MAX}s ({detail}), bursting anyway')
             self._majesty_wait_start = -1.0
             return True
         return False
