@@ -16,11 +16,15 @@ logger = Logger.get_logger(__name__)
 number_re = re.compile(r'(\d+)')
 stamina_re = re.compile(r'(\d+)/(\d+)')
 LOGIN_TEXTS = ["登录", re.compile('Log', re.IGNORECASE), '登入']
+TRAVEL_BUTTONS = ['fast_travel_custom', 'gray_teleport', 'remove_custom']
+CONFIRM_BUTTONS = ['confirm_btn_hcenter_vcenter', 'confirm_btn_highlight_hcenter_vcenter']
 f_white_color = {
     'r': (235, 255),  # Red range
     'g': (235, 255),  # Green range
     'b': (235, 255)  # Blue range
 }
+
+
 class BaseWWTask(BaseTask):
 
     def __init__(self, *args, **kwargs):
@@ -88,8 +92,11 @@ class BaseWWTask(BaseTask):
                                          name='search_dialog')
         return f_search_box
 
+    def _find_pick_f(self):
+        return self.find_one(Labels.pick_up_f_hcenter_vcenter, box=self.f_search_box, threshold=0.8)
+
     def find_f_with_text(self, target_text=None):
-        f = self.find_one(Labels.pick_up_f_hcenter_vcenter, box=self.f_search_box, threshold=0.8)
+        f = self._find_pick_f()
         if not f:
             return None
         if not target_text:
@@ -311,18 +318,18 @@ class BaseWWTask(BaseTask):
                 return cost
         return 0
 
+    def _find_realm_exit(self):
+        return self.find_one('illusive_realm_exit', threshold=0.7, frame_processor=convert_bw)
+
+    def _find_world_icon(self):
+        return self.find_one('world_earth_icon', threshold=0.55, frame_processor=convert_bw)
+
     def in_realm(self):
-        return not bool(getattr(self, 'treat_as_not_in_realm', False)) and self.find_one('illusive_realm_exit',
-                                                                                         threshold=0.7,
-                                                                                         frame_processor=convert_bw) and self.in_team() and not self.find_one(
-            'world_earth_icon', threshold=0.55,
-            frame_processor=convert_bw)
+        return not bool(getattr(self, 'treat_as_not_in_realm', False)) and self._find_realm_exit() \
+            and self.in_team() and not self._find_world_icon()
 
     def in_world(self):
-        return self.find_one('world_earth_icon', threshold=0.55,
-                             frame_processor=convert_bw) and self.in_team() and not self.find_one('illusive_realm_exit',
-                                                                                                  threshold=0.7,
-                                                                                                  frame_processor=convert_bw)
+        return self._find_world_icon() and self.in_team() and not self._find_realm_exit()
 
     def in_illusive_realm(self):
         return self.find_one('new_realm_4') and self.in_realm() and self.find_one('illusive_realm_menu', threshold=0.6)
@@ -492,7 +499,7 @@ class BaseWWTask(BaseTask):
                 return True
 
     def pick_f(self, handle_claim=True):
-        if self.find_one('pick_up_f_hcenter_vcenter', box=self.f_search_box, threshold=0.8):
+        if self._find_pick_f():
             self.send_key('f', after_sleep=0.8)
             if not handle_claim:
                 return True
@@ -501,8 +508,7 @@ class BaseWWTask(BaseTask):
                 return True
 
     def is_pick_f(self):
-        f = self.find_one('pick_up_f_hcenter_vcenter', box=self.f_search_box,
-                          threshold=0.8)
+        f = self._find_pick_f()
         if not f:
             return False
         dialog_search = f.copy(x_offset=f.width * 3, width_offset=f.width * 1.8, height_offset=f.height * 2,
@@ -903,7 +909,7 @@ class BaseWWTask(BaseTask):
         return gray_book_boss
 
     def click_traval_button(self):
-        for feature_name in ['fast_travel_custom', 'gray_teleport', 'remove_custom']:
+        for feature_name in TRAVEL_BUTTONS:
             if self.find_one(feature_name, threshold=0.7):
                 self.sleep(0.5)
                 feature = self.find_one(feature_name, threshold=0.7)
@@ -912,7 +918,7 @@ class BaseWWTask(BaseTask):
                 self.click(feature, after_sleep=1)
                 if feature.name == 'fast_travel_custom':
                     if confirm := self.wait_feature(
-                            ['confirm_btn_hcenter_vcenter', 'confirm_btn_highlight_hcenter_vcenter'],
+                            CONFIRM_BUTTONS,
                             raise_if_not_found=False,
                             threshold=0.6,
                             time_out=2):
@@ -923,7 +929,7 @@ class BaseWWTask(BaseTask):
 
     def click_confirm(self, timeout=1):
         self.wait_click_feature(
-            ['confirm_btn_hcenter_vcenter', 'confirm_btn_highlight_hcenter_vcenter'],
+            CONFIRM_BUTTONS,
             relative_x=-1, raise_if_not_found=False,
             threshold=0.6,
             time_out=timeout)
@@ -978,7 +984,7 @@ class BaseWWTask(BaseTask):
             target = max(btns, key=lambda box: box.y)
         self.draw_boxes(boxes=target, color="red")
         self.click(target, after_sleep=1)
-        self.wait_feature(['fast_travel_custom', 'gray_teleport', 'remove_custom'], time_out=10, settle_time=0.5)
+        self.wait_feature(TRAVEL_BUTTONS, time_out=10, settle_time=0.5)
 
     def change_time_to_night(self):
         logger.info('change time to night')

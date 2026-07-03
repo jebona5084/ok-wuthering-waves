@@ -1,3 +1,4 @@
+import math  # noqa
 import time  # noqa
 from enum import IntEnum, StrEnum  # noqa
 from typing import Any  # noqa
@@ -5,7 +6,7 @@ from typing import Any  # noqa
 import cv2  # noqa
 import numpy as np  # noqa
 
-from ok import Config, Logger  # noqa
+from ok import Config, Logger, color_range_to_bound  # noqa
 from src import text_white_color  # noqa
 
 SKILL_TIME_OUT = 15
@@ -687,6 +688,84 @@ class BaseChar:
                 bool: 如果充满/可用则返回 True。
         """
         return self.task.find_mouse_forte()
+
+    def judge_frequncy_and_amplitude(self, gray, min_freq, max_freq, min_amp):
+        """通过FFT频率/振幅分析判断一段共鸣回路条纹是否点亮。"""
+        height, width = gray.shape[:]
+        if height == 0 or width < 64 or not np.array_equal(np.unique(gray), [0, 255]):
+            return 0
+
+        profile = np.sum(gray == 255, axis=0).astype(np.float32)
+        profile -= np.mean(profile)
+        n = np.abs(np.fft.fft(profile))
+        amplitude = 0
+        frequncy = 0
+        i = 1
+        while i < width:
+            if n[i] > amplitude:
+                amplitude = n[i]
+                frequncy = i
+            i += 1
+        self.logger.debug(f'forte with freq {frequncy} & amp {amplitude}')
+        return (min_freq <= frequncy <= max_freq) or amplitude >= min_amp
+
+    def calculate_forte_num(self, forte_color, box, num=1, min_freq=39, max_freq=41, min_amp=50):
+        """从右往左扫描共鸣回路条, 返回点亮的格数。"""
+        cropped = box.crop_frame(self.task.frame)
+        lower_bound, upper_bound = color_range_to_bound(forte_color)
+        image = cv2.inRange(cropped, lower_bound, upper_bound)
+
+        height, width = image.shape
+        step = int(width / num)
+
+        forte = num
+        left = step * (forte - 1)
+        while forte > 0:
+            gray = image[:, left:left + step]
+            score = self.judge_frequncy_and_amplitude(gray, min_freq, max_freq, min_amp)
+            if score:
+                break
+            left -= step
+            forte -= 1
+        self.logger.info(f'Frequncy analysis with forte {forte}')
+        return forte
+
+    def calculate_color_percentage_in_masked(self, target_color, box, mask_r1_ratio=0.0, mask_r2_ratio=0.0):
+        """计算圆环遮罩内目标颜色占整个圆环面积的百分比。"""
+        cropped = box.crop_frame(self.task.frame)
+        if cropped is None or cropped.size == 0:
+            return 0.0
+        h, w = cropped.shape[:2]
+
+        r1 = int(math.floor(h * mask_r1_ratio))
+        r2 = int(math.ceil(h * mask_r2_ratio))
+        if r2 <= r1:
+            return 0.0
+
+        center = (w // 2, h // 2)
+        ring_mask = np.zeros((h, w), dtype=np.uint8)
+        cv2.circle(ring_mask, center, r2, 255, -1)
+        if r1 > 0:
+            cv2.circle(ring_mask, center, r1, 0, -1)
+
+        lower_bound, upper_bound = color_range_to_bound(target_color)
+
+        color_mask = cv2.inRange(cropped, lower_bound, upper_bound)
+
+        combined_mask = cv2.bitwise_and(color_mask, ring_mask)
+
+        match_count = cv2.countNonZero(combined_mask)
+        total_mask_area = cv2.countNonZero(ring_mask)
+        if total_mask_area == 0:
+            return 0.0
+        return match_count / total_mask_area
+
+    def shorekeeper_auto_dodge(self):
+        """如果队伍中有守岸人, 触发她的自动闪避 (供多名角色的滞空处理共用)。"""
+        from src.char.ShoreKeeper import ShoreKeeper
+        for char in self.task.chars:
+            if isinstance(char, ShoreKeeper):
+                return char.auto_dodge(condition=self.flying)
 
     def is_e_forte_full(self):
         return self.task.find_e_forte()

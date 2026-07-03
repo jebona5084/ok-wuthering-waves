@@ -1,7 +1,6 @@
 import time
 import cv2
 import numpy as np
-import math
 from enum import Enum
 
 from src.char.BaseChar import BaseChar, SwitchPriority, forte_white_color
@@ -223,35 +222,6 @@ class Phoebe(BaseChar):
     def heavy_attack_ready(self):
         return self.is_forte_full()
 
-    def calculate_color_percentage_in_masked(self, target_color, box, mask_r1_ratio=0.0, mask_r2_ratio=0.0):
-        cropped = box.crop_frame(self.task.frame)
-        if cropped is None or cropped.size == 0:
-            return 0.0
-        h, w = cropped.shape[:2]
-
-        r1 = int(math.floor(h * mask_r1_ratio))
-        r2 = int(math.ceil(h * mask_r2_ratio))
-        if r2 <= r1:
-            return 0.0
-
-        center = (w // 2, h // 2)
-        ring_mask = np.zeros((h, w), dtype=np.uint8)
-        cv2.circle(ring_mask, center, r2, 255, -1)
-        if r1 > 0:
-            cv2.circle(ring_mask, center, r1, 0, -1)
-
-        lower_bound, upper_bound = color_range_to_bound(target_color)
-
-        color_mask = cv2.inRange(cropped, lower_bound, upper_bound)
-
-        combined_mask = cv2.bitwise_and(color_mask, ring_mask)
-
-        match_count = cv2.countNonZero(combined_mask)
-        total_mask_area = cv2.countNonZero(ring_mask)
-        if total_mask_area == 0:
-            return 0.0
-        return match_count / total_mask_area
-
     def get_prayer_condition(self):
         if not self.check_middle_star():
             return self.is_forte_full
@@ -422,11 +392,6 @@ class Phoebe(BaseChar):
             self.logger.debug(f'is_forte_full mean {mean_val} contrast {contrast_val}')
         return mean_val > 190 and contrast_val < 50
 
-    def shorekeeper_auto_dodge(self):
-        from src.char.ShoreKeeper import ShoreKeeper
-        for i, char in enumerate(self.task.chars):
-            if isinstance(char, ShoreKeeper):
-                return char.auto_dodge(condition = self.flying)  
 
 phoebe_blue_color = {
     'r': (124, 134),  # Red range

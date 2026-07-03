@@ -1,14 +1,13 @@
 # EnhanceEchoTask.py
 import re
 import time
-import os
 
 from qfluentwidgets import FluentIcon
 
-from ok import FindFeature, Logger
+from ok import Logger
 from ok.feature.Box import get_bounding_box
 from ok.util.file import clear_folder
-from src.task.BaseWWTask import BaseWWTask
+from src.task.BaseEchoInventoryTask import BaseEchoInventoryTask
 
 logger = Logger.get_logger(__name__)
 
@@ -16,7 +15,7 @@ number_pattern = re.compile(r"^[\d.%％ ]+$")
 property_pattern = re.compile(r"[\u4e00-\u9fff]{2,}")
 
 
-class EnhanceEchoTask(BaseWWTask, FindFeature):
+class EnhanceEchoTask(BaseEchoInventoryTask):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -54,9 +53,6 @@ class EnhanceEchoTask(BaseWWTask, FindFeature):
             'Pause after Success': 'When a success occurs, send notification and pause task',
         }
 
-    def find_echo_enhance(self):
-        return self.ocr(0.82, 0.86, 0.97, 0.96, match='培养')
-
     def is_0_level(self):
         return self.ocr(0.65, 0.35, 1, 0.57, match=re.compile('声骸技能'))
 
@@ -65,29 +61,8 @@ class EnhanceEchoTask(BaseWWTask, FindFeature):
         self.info_set('失败声骸数量', 0)
         clear_folder('screenshots')
         while True:
-            enhance = self.find_echo_enhance()
-            if not enhance:
-                raise Exception('必须在背包声骸界面过滤后开始!')
-            current_level = self.is_0_level()
-            if not current_level:
-                total = self.info_get('成功声骸数量') + self.info_get('失败声骸数量')
-                if self.debug:
-                    self.screenshot('无可强化声骸')
-                self.log_info(f'无可强化声骸, 任务结束! 强化{total}个, 符合条件{self.info_get("成功声骸数量")}个',
-                              notify=True)
-                if self.info_get('成功声骸数量') >= 1:
-                    try:
-                        os.startfile(os.path.abspath("screenshots"))
-                    except Exception as e:
-                        self.log_error(f"无法打开截图文件夹: {e}")
+            if not self._select_next_echo('无可强化声骸'):
                 return
-            start = time.time()
-            while time.time() - start < 5:
-                if enhance:
-                    self.click(enhance, after_sleep=0.5)
-                enhance = self.find_echo_enhance()
-                if not enhance:
-                    break
 
             while True:
                 start_wait = time.time()
@@ -281,23 +256,25 @@ class EnhanceEchoTask(BaseWWTask, FindFeature):
             self.send_key('esc', interval=4, after_sleep=0.2)
         self.sleep(0.1)
 
-    def trash_and_esc(self):
-        self.info_incr('失败声骸数量')
+    def _toggle_status(self, status_box, feature_names, untoggled_name, key, not_found_msg, fail_msg):
+        """按 key 直到状态图标翻转 (5秒超时), 供弃置/上锁共用。"""
         start = time.time()
-        success = False
         while time.time() - start < 5:
-            drop_status = self.find_best_match_in_box(self.get_box_by_name('echo_dropped').scale(1.05),
-                                                      ['echo_dropped', 'echo_not_dropped'], threshold=0.7)
-            if not drop_status:
-                raise Exception('无法找到声骸弃置状态!')
-            if drop_status.name == 'echo_not_dropped':
-                self.send_key('z', after_sleep=1)
+            status = self.find_best_match_in_box(status_box, feature_names, threshold=0.7)
+            if not status:
+                raise Exception(not_found_msg)
+            if status.name == untoggled_name:
+                self.send_key(key, after_sleep=1)
             else:
                 self.log_info('成功弃置!')
-                success = True
-                break
-        if not success:
-            raise Exception('弃置失败!')
+                return
+        raise Exception(fail_msg)
+
+    def trash_and_esc(self):
+        self.info_incr('失败声骸数量')
+        self._toggle_status(self.get_box_by_name('echo_dropped').scale(1.05),
+                            ['echo_dropped', 'echo_not_dropped'], 'echo_not_dropped', 'z',
+                            '无法找到声骸弃置状态!', '弃置失败!')
         safe_reason = re.sub(r'[<>:"/\\|?*]', '', self.fail_reason)
         self.screenshot_echo(f'failed/{self.info_get("失败声骸数量")}_{safe_reason}')
         self.esc()
@@ -310,25 +287,13 @@ class EnhanceEchoTask(BaseWWTask, FindFeature):
 
     def lock_and_esc(self):
         self.info_incr('成功声骸数量')
-        start = time.time()
-        success = False
         lock_status_box = get_bounding_box([
             self.get_box_by_name('echo_locked'),
             self.get_box_by_name('echo_not_locked'),
         ]).scale(1.05)
-        while time.time() - start < 5:
-            drop_status = self.find_best_match_in_box(lock_status_box,
-                                                      ['echo_locked', 'echo_not_locked'], threshold=0.7)
-            if not drop_status:
-                raise Exception('无法找到声骸上锁状态!')
-            if drop_status.name == 'echo_not_locked':
-                self.send_key('c', after_sleep=1)
-            else:
-                self.log_info('成功弃置!')
-                success = True
-                break
-        if not success:
-            raise Exception('上锁失败!')
+        self._toggle_status(lock_status_box,
+                            ['echo_locked', 'echo_not_locked'], 'echo_not_locked', 'c',
+                            '无法找到声骸上锁状态!', '上锁失败!')
         self.screenshot_echo(f'success/{self.info_get("成功声骸数量")}')
         self.log_info('成功并上锁')
         if self.config.get('Pause after Success'):

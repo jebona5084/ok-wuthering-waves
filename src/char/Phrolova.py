@@ -88,9 +88,3 @@ class Phrolova(BaseChar):
             self.logger.debug('Phrolova heavy_click_forte')
             self.task.wait_until(lambda: self.click_liberation(wait_if_cd_ready=0), time_out=3)
             return True
-
-    def shorekeeper_auto_dodge(self):
-        from src.char.ShoreKeeper import ShoreKeeper
-        for i, char in enumerate(self.task.chars):
-            if isinstance(char, ShoreKeeper):
-                return char.auto_dodge(condition=self.flying)

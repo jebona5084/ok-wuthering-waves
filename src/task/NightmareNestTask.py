@@ -5,11 +5,10 @@ from dataclasses import dataclass
 from qfluentwidgets import FluentIcon
 from ok import Logger
 from src.task.BaseCombatTask import BaseCombatTask, CharRevivedException
+from src.task.BaseWWTask import TRAVEL_BUTTONS, CONFIRM_BUTTONS
 from src.task.WWOneTimeTask import WWOneTimeTask
 
 logger = Logger.get_logger(__name__)
-TRAVEL_FEATURES = ['fast_travel_custom', 'gray_teleport', 'remove_custom']
-CONFIRM_FEATURES = ['confirm_btn_hcenter_vcenter', 'confirm_btn_highlight_hcenter_vcenter']
 
 
 @dataclass
@@ -41,19 +40,13 @@ class NightmareNestTask(WWOneTimeTask, BaseCombatTask):
                                              'options': ['Nightmare Purification', 'Tacet Discord Nest']}
 
     def run(self):
-        self._capture_mode = False
-        self._capture_success = False
-        self._unreachable_nests.clear()
-        WWOneTimeTask.run(self)
-        self.ensure_main(time_out=30)
-        self._init_queue()
-        self.log_info('opened gray_book_boss')
-        while nest := self.get_nest_to_go():
-            self.combat_nest(nest)
-        self.ensure_main(time_out=30)
+        self._run_nests(capture_mode=False)
 
     def run_capture_mode(self):
-        self._capture_mode = True
+        self._run_nests(capture_mode=True)
+
+    def _run_nests(self, capture_mode):
+        self._capture_mode = capture_mode
         self._capture_success = False
         self._unreachable_nests.clear()
         WWOneTimeTask.run(self)
@@ -62,7 +55,7 @@ class NightmareNestTask(WWOneTimeTask, BaseCombatTask):
         self.log_info('opened gray_book_boss')
         while nest := self.get_nest_to_go():
             self.combat_nest(nest)
-            if self._capture_success:
+            if capture_mode and self._capture_success:
                 break
         self.ensure_main(time_out=30)
 
@@ -81,8 +74,7 @@ class NightmareNestTask(WWOneTimeTask, BaseCombatTask):
         return self._capture_success
 
     def combat_nest(self, nest):
-        target_box = nest.box if isinstance(nest, NestTarget) else nest
-        self.click(target_box, after_sleep=2)
+        self.click(nest.box, after_sleep=2)
         if not self._travel_to_nest_or_skip(nest):
             return
         self.sleep(1)
@@ -115,7 +107,7 @@ class NightmareNestTask(WWOneTimeTask, BaseCombatTask):
         travel = self.wait_until(self._find_travel_button, raise_if_not_found=False, time_out=1)
         if travel:
             self.click(travel, after_sleep=1)
-            if confirm := self._find_first_feature(CONFIRM_FEATURES, threshold=0.6):
+            if confirm := self._find_first_feature(CONFIRM_BUTTONS, threshold=0.6):
                 self.click(confirm, after_sleep=1)
 
         button_still_visible = travel and self.find_one(travel.name, threshold=0.7)
@@ -123,16 +115,13 @@ class NightmareNestTask(WWOneTimeTask, BaseCombatTask):
                 time_out=30, raise_if_not_found=False):
             return True
 
-        if isinstance(nest, NestTarget):
-            self._unreachable_nests.add(nest.cache_key)
-            self.log_info(f'nightmare nest unreachable, skip this run: {nest.cache_key}')
-        else:
-            self.log_info('nightmare nest unreachable, skip this run')
+        self._unreachable_nests.add(nest.cache_key)
+        self.log_info(f'nightmare nest unreachable, skip this run: {nest.cache_key}')
         self.back(after_sleep=1)
         return False
 
     def _find_travel_button(self):
-        return self._find_first_feature(TRAVEL_FEATURES, threshold=0.7)
+        return self._find_first_feature(TRAVEL_BUTTONS, threshold=0.7)
 
     def _find_first_feature(self, feature_names, threshold):
         for feature_name in feature_names:

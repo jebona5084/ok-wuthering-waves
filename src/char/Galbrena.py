@@ -45,8 +45,3 @@ class Galbrena(BaseChar):
         self.logger.debug(f'check res {best}')
         return best
         
-    def shorekeeper_auto_dodge(self):
-        from src.char.ShoreKeeper import ShoreKeeper
-        for i, char in enumerate(self.task.chars):
-            if isinstance(char, ShoreKeeper):
-                return char.auto_dodge(condition = self.flying)   

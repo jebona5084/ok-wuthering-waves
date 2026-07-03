@@ -203,6 +203,16 @@ class AutoRogueTask(WWOneTimeTask, BaseCombatTask):
                               y_offset=0.1, x_threshold=0.15, use_hook=True):
             return True
 
+    def _strafe_forward(self, strafe_key):
+        """向 strafe_key 方向斜前移一小步并回中视角。"""
+        self.send_key_down(strafe_key)
+        self.send_key_down('w')
+        self.sleep(0.2)
+        self.send_key_up(strafe_key)
+        self.send_key_up('w')
+        self.sleep(0.3)
+        self.middle_click(interval=1, after_sleep=0.2)
+
     def walk_to_gate(self):
         self.log_info('find gate')
         i = 0
@@ -213,21 +223,9 @@ class AutoRogueTask(WWOneTimeTask, BaseCombatTask):
             if box:
                 x = box.center()[0]
                 if x < self.width_of_screen(0.35):
-                    self.send_key_down('a')
-                    self.send_key_down('w')
-                    self.sleep(0.2)
-                    self.send_key_up('a')
-                    self.send_key_up('w')
-                    self.sleep(0.3)
-                    self.middle_click(interval=1, after_sleep=0.2)
+                    self._strafe_forward('a')
                 elif x > self.width_of_screen(0.65):
-                    self.send_key_down('d')
-                    self.send_key_down('w')
-                    self.sleep(0.2)
-                    self.send_key_up('d')
-                    self.send_key_up('w')
-                    self.sleep(0.3)
-                    self.middle_click(interval=1, after_sleep=0.2)
+                    self._strafe_forward('d')
                 self.sleep(0.5)
                 break
             self.send_key('d')

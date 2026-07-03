@@ -27,8 +27,3 @@ class Qiuyuan(BaseChar):
         self.click_resonance()
         self.switch_next_char()
         
-    def shorekeeper_auto_dodge(self):
-        from src.char.ShoreKeeper import ShoreKeeper
-        for i, char in enumerate(self.task.chars):
-            if isinstance(char, ShoreKeeper):
-                return char.auto_dodge(condition = self.flying)

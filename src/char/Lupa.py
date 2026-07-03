@@ -1,8 +1,5 @@
 import time
-import cv2
-import numpy as np
 
-from ok import color_range_to_bound
 from src.char.BaseChar import BaseChar, SwitchPriority
 
 
@@ -126,46 +123,6 @@ class Lupa(BaseChar):
             return 0
         box = self.task.box_of_screen_scaled(3840, 2160, 1633, 2004, 2160, 2016, name='lupa_forte', hcenter=True)
         forte = self.calculate_forte_num(lupa_red_color, box, 2, 19, 21, 400)
-        return forte
-
-    def judge_frequncy_and_amplitude(self, gray, min_freq, max_freq, min_amp):
-        height, width = gray.shape[:]
-        if height == 0 or width < 64 or not np.array_equal(np.unique(gray), [0, 255]):
-            return 0
-
-        profile = np.sum(gray == 255, axis=0).astype(np.float32)
-        profile -= np.mean(profile)
-        n = np.abs(np.fft.fft(profile))
-        amplitude = 0
-        frequncy = 0
-        i = 1
-        while i < width:
-            if n[i] > amplitude:
-                amplitude = n[i]
-                frequncy = i
-            i += 1
-        self.logger.info(f'forte with freq {frequncy} & amp {amplitude}')
-        return (min_freq <= frequncy <= max_freq) or amplitude >= min_amp
-
-    def calculate_forte_num(self, forte_color, box, num=1, min_freq=39, max_freq=41, min_amp=50):
-        cropped = box.crop_frame(self.task.frame)
-        lower_bound, upper_bound = color_range_to_bound(forte_color)
-        image = cv2.inRange(cropped, lower_bound, upper_bound)
-
-        forte = 0
-        height, width = image.shape
-        step = int(width / num)
-
-        forte = num
-        left = step * (forte - 1)
-        while forte > 0:
-            gray = image[:, left:left + step]
-            score = self.judge_frequncy_and_amplitude(gray, min_freq, max_freq, min_amp)
-            if score:
-                break
-            left -= step
-            forte -= 1
-        self.logger.info(f'Frequncy analysis with forte {forte}')
         return forte
 
 

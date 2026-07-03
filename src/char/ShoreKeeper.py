@@ -11,14 +11,9 @@ class ShoreKeeper(BaseChar):
         self.attribute = 0
 
     def get_switch_priority(self, current_char=None, has_intro=False, target_low_con=False):
-        from src.combat.StrictRotation import get_strict_rotation, MUST, NO
-        rot = get_strict_rotation(self.task)
-        if rot.is_active():
-            priority = rot.priority_for(self.name)
-            if priority == MUST:
-                return SwitchPriority.MUST
-            if priority == NO:
-                return SwitchPriority.NO
+        from src.combat.StrictRotation import strict_priority
+        if (priority := strict_priority(self)) is not None:
+            return priority
         self.decide_teammate()
         current_name = current_char.char_name if current_char else None
         if self.attribute == 2 and has_intro and current_name in {'Augusta', 'char_augusta'}:

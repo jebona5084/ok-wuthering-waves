@@ -523,6 +523,11 @@ class BaseCombatTask(CombatCheck):
         switch_to.has_intro = has_intro
         switch_to.has_sub_dps_intro = has_intro and current_char.is_sub_dps
 
+    def _fallback_no_switch_target(self, current_char, reason=''):
+        logger.warning(f"{current_char} can't find next char to switch to{reason}, "
+                       f"performing too fast add a normal attack")
+        current_char.continues_normal_attack(0.2)
+
     def switch_next_char(self, current_char, post_action=None, free_intro=False, target_low_con=False):
         """切换到下一个最优角色。
 
@@ -547,9 +552,7 @@ class BaseCombatTask(CombatCheck):
 
         switch_to = self._choose_switch_target(current_char, has_intro, target_low_con=target_low_con)
         if not switch_to or switch_to == current_char:
-            logger.warning(f"{current_char} can't find next char to switch to, performing too fast add a normal attack")
-            current_char.continues_normal_attack(0.2)
-            return
+            return self._fallback_no_switch_target(current_char)
         self._apply_intro_flags(current_char, switch_to, has_intro)
         logger.info(
             f'switch_next_char {current_char}({current_char.char_type}) -> {switch_to}({switch_to.char_type}) '
@@ -582,11 +585,7 @@ class BaseCombatTask(CombatCheck):
                     switch_to = self._choose_switch_target(current_char, has_intro,
                                                            target_low_con=target_low_con)
                     if not switch_to or switch_to == current_char:
-                        logger.warning(
-                            f"{current_char} can't find next char to switch to after intro refresh, "
-                            f"performing too fast add a normal attack")
-                        current_char.continues_normal_attack(0.2)
-                        return
+                        return self._fallback_no_switch_target(current_char, reason=' after intro refresh')
                     logger.info(f'switch_next_char refreshed target after intro became available: {switch_to}')
                 self._apply_intro_flags(current_char, switch_to, has_intro)
                 if has_intro:

@@ -1,10 +1,9 @@
-from typing import Tuple
-
 from openvino import Core
 import cv2
 import numpy as np
 
 from ok import Logger, Box, sort_boxes
+from src.yolo_common import letterbox
 
 logger = Logger.get_logger(__name__)
 
@@ -54,26 +53,11 @@ class OpenVinoYolo8Detect:
             logger.error(f"Error initializing OpenVINO: {e}")
             raise RuntimeError("Could not initialize OpenVINO model") from e
 
-    def letterbox(self, img: np.ndarray, new_shape: Tuple[int, int] = (640, 640)) -> Tuple[np.ndarray, Tuple[int, int]]:
-        shape = img.shape[:2]
-
-        r = min(new_shape[0] / shape[0], new_shape[1] / shape[1])
-
-        new_unpad = int(round(shape[1] * r)), int(round(shape[0] * r))
-        dw, dh = (new_shape[1] - new_unpad[0]) / 2, (new_shape[0] - new_unpad[1]) / 2
-
-        if shape[::-1] != new_unpad:
-            img = cv2.resize(img, new_unpad, interpolation=cv2.INTER_LINEAR)
-        top, bottom = int(round(dh - 0.1)), int(round(dh + 0.1))
-        left, right = int(round(dw - 0.1)), int(round(dw + 0.1))
-        img = cv2.copyMakeBorder(img, top, bottom, left, right, cv2.BORDER_CONSTANT, value=(114, 114, 114))
-
-        return img, (top, left)
 
     def _preprocess(self, img):
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
-        img, pad = self.letterbox(img, (self.input_width, self.input_height))
+        img, pad = letterbox(img, (self.input_width, self.input_height))
 
         image_data = np.array(img, dtype=np.float32) / 255.0
         image_data = np.transpose(image_data, (2, 0, 1))

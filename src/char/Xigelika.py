@@ -66,12 +66,6 @@ class Xigelika(BaseChar):
             handled = True
         return handled
 
-    def shorekeeper_auto_dodge(self):
-        from src.char.ShoreKeeper import ShoreKeeper
-        for i, char in enumerate(self.task.chars):
-            if isinstance(char, ShoreKeeper):
-                return char.auto_dodge(condition = self.flying)  
-                
     def is_forte_full(self):
         box = self.task.box_of_screen_scaled(5120, 2880, 3032, 2654, 3076, 2700, name='forte_full', hcenter=True)
         white_percent = self.task.calculate_color_percentage(forte_white_color, box)

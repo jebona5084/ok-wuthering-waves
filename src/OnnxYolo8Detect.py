@@ -1,11 +1,10 @@
-from typing import Tuple
-
 import onnxruntime as ort  # Added onnxruntime
 # from openvino import Core  # Removed OpenVINO Core
 import cv2
 import numpy as np
 
 from ok import Logger, Box, sort_boxes, og  # Assuming these are available
+from src.yolo_common import letterbox
 
 logger = Logger.get_logger(__name__)
 
@@ -74,36 +73,12 @@ class OnnxYolo8Detect:  # Renamed class
             raise RuntimeError("Could not initialize ONNX Runtime model") from e
         # --- End ONNX Runtime Initialization ---
 
-    def letterbox(self, img: np.ndarray, new_shape: Tuple[int, int] = (640, 640)) -> Tuple[np.ndarray, Tuple[int, int]]:
-        """
-        Resize and reshape images while maintaining aspect ratio by adding padding.
-        Args:
-            img (np.ndarray): Input image to be resized.
-            new_shape (Tuple[int, int]): Target shape (height, width) for the image.
-        Returns:
-            (np.ndarray): Resized and padded image.
-            (Tuple[int, int]): Padding values (top, left) applied to the image.
-        """
-        shape = img.shape[:2]  # current shape [height, width]
-
-        r = min(new_shape[0] / shape[0], new_shape[1] / shape[1])
-
-        new_unpad = int(round(shape[1] * r)), int(round(shape[0] * r))
-        dw, dh = (new_shape[1] - new_unpad[0]) / 2, (new_shape[0] - new_unpad[1]) / 2
-
-        if shape[::-1] != new_unpad:
-            img = cv2.resize(img, new_unpad, interpolation=cv2.INTER_LINEAR)
-        top, bottom = int(round(dh - 0.1)), int(round(dh + 0.1))
-        left, right = int(round(dw - 0.1)), int(round(dw + 0.1))
-        img = cv2.copyMakeBorder(img, top, bottom, left, right, cv2.BORDER_CONSTANT, value=(114, 114, 114))
-
-        return img, (top, left)
 
     def _preprocess(self, img):
         """图像预处理（保持宽高比的缩放填充）"""
         img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         # Use preprocess_target_h and preprocess_target_w for letterboxing
-        img_letterboxed, pad = self.letterbox(img_rgb, (self.preprocess_target_h, self.preprocess_target_w))
+        img_letterboxed, pad = letterbox(img_rgb, (self.preprocess_target_h, self.preprocess_target_w))
 
         image_data = np.array(img_letterboxed) / 255.0
         image_data = np.transpose(image_data, (2, 0, 1))  # Channel first HWC to CHW

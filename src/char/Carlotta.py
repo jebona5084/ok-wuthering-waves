@@ -1,8 +1,5 @@
 import time
-import cv2
-import numpy as np
 
-from ok import color_range_to_bound
 from src.char.BaseChar import BaseChar, SwitchPriority
 
 
@@ -36,13 +33,7 @@ class Carlotta(BaseChar):
         if self.heavy_click_forte(check_fun=self.is_mouse_forte_full):
             return self.switch_next_char()
         if self.liberation_available() and not self.need_fast_perform():
-            auto_dodge = -1
-            while self.liberation_available():
-                if auto_dodge != -1 and time.time() - auto_dodge > 0.5 and self.flying():
-                    self.shorekeeper_auto_dodge()
-                if self.click_liberation_1():
-                    auto_dodge = time.time()
-                self.check_combat()
+            self._cast_liberation_with_dodge(self.click_liberation_1)
             self.click_echo()
             return self.switch_next_char()
         if self.resonance_available():
@@ -208,19 +199,27 @@ class Carlotta(BaseChar):
             self.liberation_ready = True
             return self.switch_next_char()
         if self.liberation_available() and self.continue_liberation:
-            auto_dodge = -1
-            while self.liberation_available():
-                if auto_dodge != -1 and time.time() - auto_dodge > 0.5 and self.flying():
-                    self.shorekeeper_auto_dodge()
-                if self.click_liberation():
-                    auto_dodge = time.time()
-                    self.continue_liberation = False
-                    self.liberation_ready = False
-                self.check_combat()
+            def on_cast():
+                self.continue_liberation = False
+                self.liberation_ready = False
+
+            self._cast_liberation_with_dodge(self.click_liberation, on_cast)
         if self.echo_available():
             self.click_echo()
         self.continues_normal_attack(0.31)
         self.switch_next_char()
+
+    def _cast_liberation_with_dodge(self, click_fn, on_cast=None):
+        """连点释放共鸣解放直到就绪状态消失, 滞空时触发守岸人自动闪避。"""
+        auto_dodge = -1
+        while self.liberation_available():
+            if auto_dodge != -1 and time.time() - auto_dodge > 0.5 and self.flying():
+                self.shorekeeper_auto_dodge()
+            if click_fn():
+                if on_cast:
+                    on_cast()
+                auto_dodge = time.time()
+            self.check_combat()
 
     def do_perform_outro(self):
         self.char_zhezhi.forte = 0
@@ -245,16 +244,13 @@ class Carlotta(BaseChar):
         if self.liberation_ready:
             while self.time_elapsed_accounting_for_freeze(self.last_perform) < 14:
                 if self.liberation_available() and not liber:
-                    auto_dodge = -1
-                    while self.liberation_available():
-                        if auto_dodge != -1 and time.time() - auto_dodge > 0.5 and self.flying():
-                            self.shorekeeper_auto_dodge()
-                        if self.click_liberation():
-                            self.liberation_ready = False
-                            liber = True
-                            self.forte = 0
-                            auto_dodge = time.time()
-                        self.check_combat()
+                    def on_cast():
+                        nonlocal liber
+                        self.liberation_ready = False
+                        liber = True
+                        self.forte = 0
+
+                    self._cast_liberation_with_dodge(self.click_liberation, on_cast)
                     if liber:
                         self.sleep(0.2)
                 if self.click_resonance()[0]:
@@ -267,52 +263,6 @@ class Carlotta(BaseChar):
                 self.check_combat()
         self.click_echo(time_out=2)
         self.continue_liberation = not liber
-
-    def judge_frequncy_and_amplitude(self, gray, min_freq, max_freq, min_amp):
-        height, width = gray.shape[:]
-        if height == 0 or width < 64 or not np.array_equal(np.unique(gray), [0, 255]):
-            return 0
-
-        profile = np.sum(gray == 255, axis=0).astype(np.float32)
-        profile -= np.mean(profile)
-        n = np.abs(np.fft.fft(profile))
-        amplitude = 0
-        frequncy = 0
-        i = 1
-        while i < width:
-            if n[i] > amplitude:
-                amplitude = n[i]
-                frequncy = i
-            i += 1
-        self.logger.info(f'forte with freq {frequncy} & amp {amplitude}')
-        return (min_freq <= frequncy <= max_freq) or amplitude >= min_amp
-
-    def calculate_forte_num(self, forte_color, box, num=1, min_freq=39, max_freq=41, min_amp=50):
-        cropped = box.crop_frame(self.task.frame)
-        lower_bound, upper_bound = color_range_to_bound(forte_color)
-        image = cv2.inRange(cropped, lower_bound, upper_bound)
-
-        forte = 0
-        height, width = image.shape
-        step = int(width / num)
-
-        forte = num
-        left = step * (forte - 1)
-        while forte > 0:
-            gray = image[:, left:left + step]
-            score = self.judge_frequncy_and_amplitude(gray, min_freq, max_freq, min_amp)
-            if score:
-                break
-            left -= step
-            forte -= 1
-        self.logger.info(f'Frequncy analysis with forte {forte}')
-        return forte
-
-    def shorekeeper_auto_dodge(self):
-        from src.char.ShoreKeeper import ShoreKeeper
-        for i, char in enumerate(self.task.chars):
-            if isinstance(char, ShoreKeeper):
-                return char.auto_dodge(condition=self.flying)
 
 
 carlotta_forte_color = {

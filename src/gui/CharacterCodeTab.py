@@ -309,14 +309,10 @@ class CharacterCodeTab(CustomTab):
                 code = self.editor.toPlainText()
                 builtin_code = read_builtin_char_code(self.current_char_cls)
                 if code == builtin_code:
-                    remove_custom_char_code(self.current_char_cls)
-                    reloaded = self._reload_live_char_code()
-                    self._switch_to_builtin_mode(builtin_code)
-                    self._refresh_char_list(self.current_char_cls)
-                    message = self.tr("Custom code matches built in code. Removed custom code and switched to built in.")
-                    if reloaded:
-                        message = self.tr("Custom code matches built in code. Removed custom code, switched to built in, and reloaded loaded characters.")
-                    show_info_bar(self.window(), message, title=self.tr("Success"))
+                    self._revert_to_builtin(
+                        builtin_code,
+                        self.tr("Custom code matches built in code. Removed custom code and switched to built in."),
+                        self.tr("Custom code matches built in code. Removed custom code, switched to built in, and reloaded loaded characters."))
                     return
                 path = save_custom_char_code(self.current_char_cls, code, use_custom=True)
                 reloaded = self._reload_live_char_code()
@@ -349,14 +345,18 @@ class CharacterCodeTab(CustomTab):
         if not box.exec():
             return
         builtin_code = read_builtin_char_code(self.current_char_cls)
+        self._revert_to_builtin(
+            builtin_code,
+            self.tr("Custom code reset to built in code."),
+            self.tr("Custom code reset to built in code and reloaded for loaded characters."))
+
+    def _revert_to_builtin(self, builtin_code, message, reloaded_message):
+        """Remove the custom code, reload live chars, and switch the UI back to built-in."""
         remove_custom_char_code(self.current_char_cls)
         reloaded = self._reload_live_char_code()
         self._switch_to_builtin_mode(builtin_code)
         self._refresh_char_list(self.current_char_cls)
-        message = self.tr("Custom code reset to built in code.")
-        if reloaded:
-            message = self.tr("Custom code reset to built in code and reloaded for loaded characters.")
-        show_info_bar(self.window(), message, title=self.tr("Success"))
+        show_info_bar(self.window(), reloaded_message if reloaded else message, title=self.tr("Success"))
 
     def _switch_to_builtin_mode(self, builtin_code):
         self.suppress_mode_guard = True

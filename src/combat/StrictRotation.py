@@ -247,6 +247,25 @@ def get_strict_rotation(task):
     return rot
 
 
+def strict_priority(char):
+    """Map the coordinator's ranking for ``char`` onto ``SwitchPriority``.
+
+    Returns None when the rotation is inactive or ranks the character
+    NORMAL, so callers fall back to their own reactive priority logic.
+    Shared by the team's characters to keep their ``get_switch_priority``
+    preludes identical.
+    """
+    from src.char.BaseChar import SwitchPriority
+    rot = get_strict_rotation(char.task)
+    if rot.is_active():
+        priority = rot.priority_for(char.name)
+        if priority == MUST:
+            return SwitchPriority.MUST
+        if priority == NO:
+            return SwitchPriority.NO
+    return None
+
+
 def _combat_control_exceptions():
     """Combat-flow exceptions that must propagate, not be swallowed as beat errors.
 

@@ -17,15 +17,9 @@ class Augusta(BaseChar):
         self._do_perform_default()
 
     def get_switch_priority(self, current_char=None, has_intro=False, target_low_con=False):
-        from src.combat.StrictRotation import get_strict_rotation, MUST, NO
-        from src.char.BaseChar import SwitchPriority
-        rot = get_strict_rotation(self.task)
-        if rot.is_active():
-            priority = rot.priority_for(self.name)
-            if priority == MUST:
-                return SwitchPriority.MUST
-            if priority == NO:
-                return SwitchPriority.NO
+        from src.combat.StrictRotation import strict_priority
+        if (priority := strict_priority(self)) is not None:
+            return priority
         return super().get_switch_priority(current_char, has_intro, target_low_con)
 
     def perform_beat(self, beat):
@@ -171,12 +165,6 @@ class Augusta(BaseChar):
 
     def resonance_available(self):
         return not self.has_cd('resonance')
-
-    def shorekeeper_auto_dodge(self):
-        from src.char.ShoreKeeper import ShoreKeeper
-        for i, char in enumerate(self.task.chars):
-            if isinstance(char, ShoreKeeper):
-                return char.auto_dodge(condition=self.flying)
 
     def on_combat_end(self, chars):
         next_char = str((self.index + 1) % len(chars) + 1)
