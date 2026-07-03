@@ -350,6 +350,17 @@ class ShoreKeeper(BaseChar):
         self.click_resonance()
         self.spend_forte()
 
+    # Never leave a near-full ring on the table: a swap-out with concerto in
+    # (0.7, 1.0) is one or two actions away from a full outro (user: 'if she
+    # switches to iuno and her concerto is less than 100 and greater than 70,
+    # switch back to sk and fill concerto'). Implemented PRE-swap -- the swap
+    # decision is intercepted right here and she stays to finish the ring; a
+    # literal post-swap switch-back is not observable from this layer (the
+    # outgoing ring is zeroed on swap and later reads target the incoming
+    # char), so pre-commit is the code-observable equivalent.
+    NEAR_FULL_HOLD_MIN = 0.7
+    NEAR_FULL_FILL_BUDGET = 6.0
+
     def switch_next_char(self, *args, **kwargs):
         # Reactive-phase outro hardening (no-op while the scripted rotation
         # drives). Her outro buff is REQUIRED by the cycle -- Augusta must carry
@@ -361,6 +372,19 @@ class ShoreKeeper(BaseChar):
         from src.combat.BuffTracker import get_buff_tracker, SK_OUTRO
         reactive_outro_topoff(self, kwargs, threshold=0.6, aggressive=True,
                               mandatory=True)
+        con = self.get_current_con()
+        self.logger.info(f'ShoreKeeper switch-out: concerto={con:.2f}')
+        if (not kwargs.get('free_intro')
+                and self.NEAR_FULL_HOLD_MIN < con < 1.0):
+            from src.combat.StrictRotation import topoff_concerto, confirm_con_full
+            self.logger.info(f'ShoreKeeper: near-full ring ({con:.2f}) at '
+                             f'switch-out -- filling to 100 before leaving')
+            if (topoff_concerto(self, self.NEAR_FULL_FILL_BUDGET,
+                                allow_early_switch=False)
+                    or confirm_con_full(self)):
+                kwargs['free_intro'] = True  # leave via the outro, buff lands
+            self.logger.info(f'ShoreKeeper: near-full fill ended at '
+                             f'concerto={self.get_current_con():.2f}')
         tracker = get_buff_tracker(self.task)
         # Leaving the field ends any receiver-bound buff riding on her (Augusta's
         # outro amp) -- outro or plain swap alike, per the kit's 'expires on
