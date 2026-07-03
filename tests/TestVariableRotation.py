@@ -268,6 +268,9 @@ class _ToppedChar:
     def wait_down(self, *a, **k):
         pass
 
+    def sleep(self, *a, **k):
+        pass
+
     # build_concerto() deps for the aggressive (high-yield) top-off path: all the
     # big sources are on cooldown here, so it falls to click(), which we treat as
     # reaching full so topoff_concerto returns promptly.

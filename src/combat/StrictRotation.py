@@ -127,6 +127,13 @@ AGGRESSIVE_CANCEL_DEFAULT = True
 SWITCH_WHILE_BUILDING_CONFIG_KEY = 'Augusta Iuno SK Switch While Building'
 SWITCH_WHILE_BUILDING_DEFAULT = True
 
+# Brief idle before pressing the swap on an OUTRO hand-off, so the outgoing
+# char's last action (typically a heavy) finishes its active frames and the game
+# registers the swap as a clean outro. Log analysis showed outro swaps landing
+# ~0.7s after the final heavy PRESS -- mid-animation -- with the outro buff then
+# not appearing in game despite a verified-full ring.
+OUTRO_SWAP_SETTLE = 0.25
+
 # Even with switch-while-building ON, never bail out of a concerto top-off when
 # the ring is this close to full -- finishing it costs an action or two and wins
 # the outro buff, which beats the fraction of a second the early swap would save.
@@ -385,6 +392,9 @@ class StrictRotation:
             if char.flying():
                 logger.info(f'{self.LABEL} grounding {char.name} before outro so its buff lands')
                 char.wait_down()
+            # ...and let the last action's animation settle so the game takes the
+            # swap as a clean outro instead of clipping it mid-recovery.
+            char.sleep(OUTRO_SWAP_SETTLE)
         elif aggressive_cancel_enabled(self.task):
             # Aggressive quickswap on non-outro beats: jump-cancel the last action's
             # recovery so the swap is immediate instead of waiting out the animation.

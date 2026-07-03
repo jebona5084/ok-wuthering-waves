@@ -154,9 +154,11 @@ class Iuno(BaseChar):
                 # Settle so the special-heavy BUFF registers before the caller
                 # acts on it. do_everything otherwise returns with only a 0.05s
                 # tail, and the burst's outro top-off / grounding / swap (or the
-                # reactive switch) then cancel the heavy before its buff lands --
-                # which is why the heavy "kept getting cancelled".
-                self.sleep(0.35)
+                # reactive switch) then cancel the heavy before its buff lands.
+                # 0.8s: log analysis showed the swap landing ~0.7s after the heavy
+                # PRESS with a 0.35s settle -- mid-animation, before the hit that
+                # applies the buff. The full slam needs ~1s from press to register.
+                self.sleep(0.8)
                 if not c6_performed and self.is_c6():
                     c6_performed = True
                     start = time.time()

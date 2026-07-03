@@ -261,5 +261,9 @@ def reactive_outro_topoff(char, kwargs, threshold=REACTIVE_TOPOFF_THRESHOLD,
         # jump-native); wait_down returns at once if she is already grounded.
         if char.flying():
             char.wait_down()
+        # settle the last action's animation so the swap is a clean outro (same
+        # rationale as the scripted hand-off's OUTRO_SWAP_SETTLE).
+        from src.combat.StrictRotation import OUTRO_SWAP_SETTLE
+        char.sleep(OUTRO_SWAP_SETTLE)
         kwargs['free_intro'] = True
     return kwargs
