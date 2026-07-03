@@ -74,20 +74,11 @@ char_config_option = ConfigOption('Character Config', {
     'Augusta Iuno SK Switch While Building': True,
     'Concerto Debug Captures': True,
 }, description='Character Config', config_description={
-    'Augusta Iuno SK Strict Rotation': 'Fixed quickswap rotation for the Augusta/Iuno/ShoreKeeper team',
-    'Augusta Iuno SK Variable Rotation': 'Same rotation but characters can linger on field for '
-                                         'condition-based windows (e.g. Augusta holds ~14s on an Iuno '
-                                         'intro). Overrides the strict rotation when on.',
-    'Augusta Iuno SK Aggressive Cancel': 'Jump-cancel the last action before a non-outro swap so swaps '
-                                         'are immediate. Turn off for plain swaps. Outro swaps are never '
-                                         'cancelled (the char is grounded so the buff lands).',
-    'Augusta Iuno SK Switch While Building': 'While building concerto, switch out as soon as a swap is '
-                                             'possible (even below full, no outro buff) instead of holding '
-                                             'to reach 100%. Turn off to always build to full for the outro. '
-                                             'Only affects the reactive phase; the opener always builds to full.',
-    'Concerto Debug Captures': 'Save the concerto-ring crop to concerto_debug/ whenever the reader\'s '
-                               'verdict changes (throttled, max 200 per session) so detection issues can '
-                               'be diagnosed from the exact pixels. Turn off once detection is stable.',
+    'Augusta Iuno SK Strict Rotation': 'Fixed quickswap rotation for Augusta/Iuno/ShoreKeeper',
+    'Augusta Iuno SK Variable Rotation': 'Rotation with condition-based field time. Overrides strict.',
+    'Augusta Iuno SK Aggressive Cancel': 'Jump-cancel before non-outro swaps (outro swaps never cancel)',
+    'Augusta Iuno SK Switch While Building': 'Swap out early while building concerto (reactive phase only)',
+    'Concerto Debug Captures': 'Save concerto-ring crops to concerto_debug/ for diagnosis',
 }, show_at_tab=True, icon=FluentIcon.PEOPLE)
 
 monthly_card_config_option = ConfigOption('Monthly Card Config', {
