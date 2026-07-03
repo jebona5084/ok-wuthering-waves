@@ -195,18 +195,47 @@ class ShoreKeeper(BaseChar):
         if the gauge check drops)."""
         return bool(super().is_mouse_forte_full() or self.is_forte_full())
 
+    # Illation hold tuning (user: 'sk hold attack dodge cancel should be a bit
+    # longer, the attack doesnt go off'). The base heavy_click_forte releases
+    # the instant the gauge check reads not-full and the old spend cancelled
+    # 0.05s later -- a single washed frame of the gold blaze released the hold
+    # before the heavy charged, and even a clean hold got its hit cancelled.
+    FORTE_HOLD_MIN = 0.6       # keep the button down at least this long
+    FORTE_CANCEL_DELAY = 0.5   # let the released hit register before cancelling
+
+    def heavy_click_forte(self, check_fun=None):
+        """Base hold + a MINIMUM hold time: release only once the gauge reads
+        drained AND FORTE_HOLD_MIN has elapsed, so a single flicker frame of
+        the blaze cannot cut the hold short of the charge."""
+        check_fun = check_fun or self.is_mouse_forte_full
+        if not check_fun():
+            return None
+        start = time.time()
+        self.task.mouse_down()
+        success = self.task.wait_until(lambda: not check_fun(), time_out=2)
+        remaining = self.FORTE_HOLD_MIN - (time.time() - start)
+        if remaining > 0:
+            self.sleep(remaining)
+        self.task.mouse_up()
+        self.sleep(0.05)
+        return success
+
     def spend_forte(self, check=None):
         """Illation (user request: 'if sk bar is full, hold mouse click and
         animation cancel'): when her forte bar is full, HOLD the mouse until
         the gauge drains (heavy_click_forte holds by design), then dodge-CANCEL
         the recovery -- the kit marks Illation safe once the hit registers (the
-        converted butterflies keep attacking), so the cancel costs nothing and
-        frees the field ~0.5s sooner. try_spend_forte routes through this
-        automatically, so mid-string forte spends get the cancel too."""
-        fired = self.heavy_click_forte(check or self.is_mouse_forte_full)
-        if fired:
+        converted butterflies keep attacking), so the cancel costs nothing.
+        The FORTE_CANCEL_DELAY settle before the cancel is what lets the hit
+        actually register. try_spend_forte routes through this automatically,
+        so mid-string forte spends get the cancel too."""
+        held = self.heavy_click_forte(check or self.is_mouse_forte_full)
+        if held is not None:
+            # the hold happened -- give the released heavy its impact frames,
+            # then cancel only the recovery
+            self.sleep(self.FORTE_CANCEL_DELAY)
             self.dodge_cancel()
-        return fired
+        return held
 
     def _bind_augusta_outro(self):
         """Register SK as the receiver of Augusta's outro amp when this intro
