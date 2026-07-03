@@ -167,6 +167,28 @@ def _largest_gap_run(covered):
     return _largest_arc_run([not c for c in covered])
 
 
+def _close_single_gaps(lit):
+    """Bridge ISOLATED one-sector holes in the lit vector (circular closing).
+
+    Real rings drop single sectors to anti-aliasing, the fill seam, or a pixel
+    of overlapping HUD -- and one such hole SPLITS the contiguous run, collapsing
+    a 95% read to wherever the hole happens to sit (bootstrap sim: a ring at
+    0.95 fill read 0.60 off one unlucky sector at 1080p).
+
+    DECOY-SAFETY: this does NOT help the decoy overlay pass as full. The full
+    criteria already tolerate gaps <= CON_FULL_MAX_GAP_SECTORS (2), so any
+    decoy that closing could bridge (single holes) passed full geometry with
+    or without it -- and the bloom gate, not geometry, is what rejects the
+    decoy. Closing only stabilises PARTIAL reads. A genuine gap of >= 2
+    sectors (10 degrees) survives untouched, and a sweep's isolated LIT
+    sectors are the inverse case, which closing never helps.
+    """
+    n = len(lit)
+    if n < 3:
+        return list(lit)
+    return [lit[i] or (lit[(i - 1) % n] and lit[(i + 1) % n]) for i in range(n)]
+
+
 def _color_range_to_bgr_bounds(color_range):
     """{'r': (lo,hi), 'g': ..., 'b': ...} -> (lower, upper) BGR uint8 arrays.
 
@@ -277,7 +299,7 @@ def con_ring_profile(cropped, lower, upper, glow_lower=None, glow_upper=None):
                  & (bloom_per_sector >= CON_SECTOR_MIN_PIXELS)
                  & (band_per_sector > 0))
 
-    lit_list = lit.tolist()
+    lit_list = _close_single_gaps(lit.tolist())
     band_gray = cropped[in_band].mean() if np.any(in_band) else 0.0
     return {
         'lit': lit_list,
@@ -381,6 +403,21 @@ def resolve_con_reading(state, profile, now, frame_key, char_key):
         # elements with a glow band, a closed ring carried by the element
         # mask alone -- no bloom -- is the decoy hiding the gauge: a blind
         # frame, not a full and not a zero.
+        #
+        # PULSE HOLE: the true full's pale bloom PULSES, so genuine-full
+        # frames in the low phase land HERE and would otherwise let an armed
+        # sighting age out of CON_FULL_CONFIRM_WINDOW between blooming frames
+        # -- the confirm could then never pair and the outro would silently
+        # die. So a low-bloom frame REFRESHES an already-armed sighting's
+        # timestamp when its lit signature matches (timestamp only -- never
+        # the frame/signature, and never ARMS one). The decoy cannot exploit
+        # this: arming requires passing the bloom gate, which the decoy by
+        # definition never does, so there is never a decoy-armed sighting to
+        # keep alive.
+        if (state.full_sight_frame is not None
+                and _signature_match(state.full_sight_lit, profile['lit'])
+                >= CON_FULL_SIGNATURE_MATCH):
+            state.full_sight_t = now
         reason = 'element-only full ring (decoy overlay)'
         if state.trusted is not None and now - state.trusted_t <= CON_HOLD_MAX_AGE:
             result = (state.trusted, True, f'{reason}: holding last trusted')
