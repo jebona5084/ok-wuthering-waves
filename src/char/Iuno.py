@@ -86,22 +86,22 @@ class Iuno(BaseChar):
             # presses Space only while the iuno_jump prompt shows, so this is
             # a no-op when it is not available).
             self.click_resonance()
-            self.jump_cancel()
+            self.jump_cancel(wait=0.8)
         elif beat.name == 'iuno_open3':
             # 6. echo, then Space if the Flux prompt lit
             self.click_echo()
-            self.jump_cancel()
+            self.jump_cancel(wait=0.8)
         elif beat.name == 'iuno_loop1':
             # 12. skill, echo, dash, skill -- Space after each cast when lit.
             # (The burst beats stay untouched: they already Flux at entry, and
             # the kit bans jumps AROUND the Arc casts -- an air-cast drops the
             # skill buff.)
             self.click_resonance()
-            self.jump_cancel()
+            self.jump_cancel(wait=0.8)
             self.click_echo()
             dash(self)
             self.click_resonance()
-            self.jump_cancel()
+            self.jump_cancel(wait=0.8)
         elif beat.name in ('iuno_burst', 'iuno_burst2'):
             # 8 / 14. (intro) jump-cancel, lib, skill, ba1234, skill, ba, ha, outro
             if beat.intro:
@@ -110,7 +110,7 @@ class Iuno(BaseChar):
         else:  # defensive: unknown beat
             self.do_everything()
 
-    def jump_cancel(self):
+    def jump_cancel(self, wait=0.0):
         """Press Space while the extra-action prompt shows.
 
         Lunar Cycle key-remap gotcha (user-verified): once Iuno is in Lunar
@@ -118,9 +118,23 @@ class Iuno(BaseChar):
         Half Moon <-> New Moon state toggle (and hold-LMB becomes Absolute
         Fullness at 100 concerto). The ``iuno_jump`` prompt in box_extra_action
         is that Flux prompt, so pressing Space here is the moon-state flip the
-        rotation wants, not a movement jump."""
-        while self.task.find_feature("iuno_jump", box="box_extra_action", threshold=0.6):
-            self.task.jump(after_sleep=0.1)
+        rotation wants, not a movement jump.
+
+        ``wait``: poll up to this long for the prompt to LIGHT before giving
+        up (user: 'iuno not using spacebar skill when its available' -- the
+        prompt lights a beat AFTER a cast resolves, so an instantaneous check
+        right after click_resonance missed it every time). Returns True if
+        Space was pressed."""
+        end = time.time() + wait
+        pressed = False
+        while True:
+            while self.task.find_feature("iuno_jump", box="box_extra_action",
+                                         threshold=0.6):
+                self.task.jump(after_sleep=0.1)
+                pressed = True
+            if pressed or time.time() >= end:
+                return pressed
+            self.task.next_frame()
 
     # Minimum time the mouse is KEPT DOWN for Absolute Fullness. Releasing on
     # "prompt cleared" was wrong: the prompt vanishes the instant the press
@@ -374,8 +388,11 @@ class Iuno(BaseChar):
                 if not full:
                     build_concerto(self)
                 else:
-                    self.click()
-                    self.sleep(0.1)
+                    # idle at full: cash a lit Flux prompt (user: 'iuno not
+                    # using spacebar skill when its available'), else filler
+                    if not self.jump_cancel():
+                        self.click()
+                        self.sleep(0.1)
             if confirm_con_full(self):
                 kwargs['free_intro'] = True
         # Will this exit be an OUTRO? free_intro is only ever set on a
