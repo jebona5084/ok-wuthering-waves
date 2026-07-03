@@ -44,6 +44,13 @@ class Iuno(BaseChar):
                 return SwitchPriority.MUST
             if priority == NO:
                 return SwitchPriority.NO
+        # Reactive phase: Iuno CLAIMS ShoreKeeper's con-full outro (user request),
+        # closing the Augusta -> SK -> Iuno -> Augusta triangle. SK's outro also
+        # puts recovery butterflies on the incoming char, which patches Iuno's
+        # mid-air interruption weakness during Lunar Cycle.
+        from src.char.ShoreKeeper import ShoreKeeper
+        if has_intro and isinstance(current_char, ShoreKeeper):
+            return SwitchPriority.MUST
         return super().get_switch_priority(current_char, has_intro, target_low_con)
 
     def perform_beat(self, beat):
@@ -81,20 +88,20 @@ class Iuno(BaseChar):
         while self.task.find_feature("iuno_jump", box="box_extra_action", threshold=0.6):
             self.task.jump(after_sleep=0.1)
 
-    # bound for holding the special heavy's mouse press (released early when the
-    # prompt clears).
-    SPECIAL_HEAVY_HOLD_MAX = 1.5
+    # Minimum time the mouse is KEPT DOWN for Absolute Fullness. Releasing on
+    # "prompt cleared" was wrong: the prompt vanishes the instant the press
+    # registers, so the hold collapsed into a <0.15s click (log: 'Absolute
+    # Fullness held' -> swap 138ms later) -- an ordinary heavy, no buff.
+    SPECIAL_HEAVY_HOLD = 1.0
 
     def _hold_special_heavy(self):
-        """Iuno's special heavy is a HOLD, not a click: press and KEEP the mouse
-        held until the extra-action prompt clears (bounded). A plain click fires
-        an ordinary heavy and the buff never applies. The buff also requires FULL
-        concerto -- callers gate on is_con_full() before invoking this."""
+        """Iuno's special heavy (Absolute Fullness) is a HOLD, not a click: press
+        and KEEP the mouse held for the full charge (SPECIAL_HEAVY_HOLD). A plain
+        click fires an ordinary heavy and the buff never applies. The buff also
+        requires FULL concerto -- callers gate on is_con_full() before invoking
+        this. Do NOT release on the prompt clearing; it clears on press."""
         self.task.mouse_down()
-        self.task.wait_until(
-            lambda: not self.task.find_feature("iuno_heavy", box="box_extra_action",
-                                               threshold=0.55),
-            time_out=self.SPECIAL_HEAVY_HOLD_MAX)
+        self.sleep(self.SPECIAL_HEAVY_HOLD)
         self.task.mouse_up()
 
     def _iuno_burst(self):
