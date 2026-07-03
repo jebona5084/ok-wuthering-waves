@@ -44,7 +44,7 @@ except Exception:  # pragma: no cover - exercised only when ``ok`` is unavailabl
     logger = logging.getLogger(__name__)
 
 from src.combat.StrictRotation import (
-    StrictRotation, OUTRO_TOPOFF_TIME_OUT,
+    StrictRotation, OUTRO_TOPOFF_TIME_OUT, OUTRO_SWAP_SETTLE,
     build_concerto, topoff_concerto, try_spend_forte, get_strict_rotation,
     _combat_control_exceptions,
 )
@@ -263,7 +263,6 @@ def reactive_outro_topoff(char, kwargs, threshold=REACTIVE_TOPOFF_THRESHOLD,
             char.wait_down()
         # settle the last action's animation so the swap is a clean outro (same
         # rationale as the scripted hand-off's OUTRO_SWAP_SETTLE).
-        from src.combat.StrictRotation import OUTRO_SWAP_SETTLE
         char.sleep(OUTRO_SWAP_SETTLE)
         kwargs['free_intro'] = True
     return kwargs
