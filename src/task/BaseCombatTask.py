@@ -129,12 +129,6 @@ CON_FULL_SIGNATURE_MATCH = 0.95
 # it, fall back to the raw (capped) reading so a chronic misclassification can
 # never freeze the value forever.
 CON_HOLD_MAX_AGE = 2.5
-# For elements with a glow band (con_glow_colors), a TRUE full ring blooms
-# pale: at least this fraction of sectors must be lit by the glow/bright
-# masks for a full-geometry ring to count as full. A closed ring carried by
-# the element mask alone is the DECOY overlay (renders in-range and static,
-# so nothing else can reject it) and is treated as a blind frame.
-CON_FULL_BLOOM_MIN = 0.5
 
 
 def _largest_arc_run(covered):
@@ -165,6 +159,23 @@ def _largest_gap_run(covered):
     if not covered:
         return 0
     return _largest_arc_run([not c for c in covered])
+
+
+def _close_single_gaps(lit):
+    """Bridge ISOLATED one-sector holes in the lit vector (circular closing).
+
+    Real rings drop single sectors to anti-aliasing, the fill seam, or a pixel
+    of overlapping HUD -- and one such hole SPLITS the contiguous run, collapsing
+    a 95% read to wherever the hole happens to sit (bootstrap sim: an ice ring
+    at 0.95 fill read 0.60 off one unlucky sector at 1080p). Closing only
+    single holes is safe in the adversarial direction: a genuine gap of >= 2
+    sectors (10 degrees) survives untouched, and a sweep's isolated LIT sectors
+    are the inverse case, which closing never helps.
+    """
+    n = len(lit)
+    if n < 3:
+        return list(lit)
+    return [lit[i] or (lit[(i - 1) % n] and lit[(i + 1) % n]) for i in range(n)]
 
 
 def _color_range_to_bgr_bounds(color_range):
@@ -257,11 +268,6 @@ def con_ring_profile(cropped, lower, upper, glow_lower=None, glow_upper=None):
     union_band = (element_or_glow | bright) & in_band
     lit_per_sector = np.bincount(bins[union_band], minlength=CON_RING_SECTORS)
     element_per_sector = np.bincount(bins[element_or_glow & in_band], minlength=CON_RING_SECTORS)
-    if glow_lower is not None:
-        bloom = np.all((cropped >= glow_lower) & (cropped <= glow_upper), axis=2) | bright
-    else:
-        bloom = bright
-    bloom_per_sector = np.bincount(bins[bloom & in_band], minlength=CON_RING_SECTORS)
 
     safe_band = np.maximum(band_per_sector, 1)
     density = lit_per_sector / safe_band
@@ -272,12 +278,8 @@ def con_ring_profile(cropped, lower, upper, glow_lower=None, glow_upper=None):
     element_lit = ((element_density >= CON_SECTOR_DENSITY_LIT)
                    & (element_per_sector >= CON_SECTOR_MIN_PIXELS)
                    & (band_per_sector > 0))
-    bloom_density = bloom_per_sector / safe_band
-    bloom_lit = ((bloom_density >= CON_SECTOR_DENSITY_LIT)
-                 & (bloom_per_sector >= CON_SECTOR_MIN_PIXELS)
-                 & (band_per_sector > 0))
 
-    lit_list = lit.tolist()
+    lit_list = _close_single_gaps(lit.tolist())
     band_gray = cropped[in_band].mean() if np.any(in_band) else 0.0
     return {
         'lit': lit_list,
@@ -285,8 +287,6 @@ def con_ring_profile(cropped, lower, upper, glow_lower=None, glow_upper=None):
         'largest_run': _largest_arc_run(lit_list) / CON_RING_SECTORS,
         'max_gap': _largest_gap_run(lit_list),
         'element_lit_total': float(np.count_nonzero(element_lit)) / CON_RING_SECTORS,
-        'bloom_lit_total': float(np.count_nonzero(bloom_lit)) / CON_RING_SECTORS,
-        'expect_bloom': glow_lower is not None,
         'pollution': float(pollution),
         'brightness': float(band_gray),
         'bright_core': float(bright_core),
@@ -371,23 +371,6 @@ def resolve_con_reading(state, profile, now, frame_key, char_key):
 
     full_geometry = (profile['total_lit'] >= CON_RING_COVERAGE_FULL
                      and profile['max_gap'] <= CON_FULL_MAX_GAP_SECTORS)
-    if (full_geometry and profile.get('expect_bloom')
-            and profile.get('bloom_lit_total', 0.0) < CON_FULL_BLOOM_MIN):
-        # DECOY overlay (user screenshot read con_full_100 on a visibly
-        # not-full gauge): SK's decoy star ring renders INSIDE the element
-        # colour range and is static, so neither the colour masks nor the
-        # two-frame signature confirm can reject it. Her TRUE full blooms
-        # PALE (the glow band; user's side-by-side reference). So for
-        # elements with a glow band, a closed ring carried by the element
-        # mask alone -- no bloom -- is the decoy hiding the gauge: a blind
-        # frame, not a full and not a zero.
-        reason = 'element-only full ring (decoy overlay)'
-        if state.trusted is not None and now - state.trusted_t <= CON_HOLD_MAX_AGE:
-            result = (state.trusted, True, f'{reason}: holding last trusted')
-        else:
-            result = (0.99, True, f'{reason}: no recent trusted value')
-        state.memo = result
-        return result
     if full_geometry:
         prior_ok = (state.full_sight_frame is not None
                     and state.full_sight_frame != frame_key
@@ -1444,7 +1427,6 @@ class BaseCombatTask(CombatCheck):
         self.log_debug(
             f'get_current_con {percent:.2f} [{reason}] lit={profile["total_lit"]:.2f} '
             f'run={profile["largest_run"]:.2f} gap={profile["max_gap"]} '
-            f'bloom={profile["bloom_lit_total"]:.2f} '
             f'pol={profile["pollution"]:.2f} br={profile["brightness"]:.0f} '
             f'core={profile["bright_core"]:.2f}')
 
@@ -1501,36 +1483,43 @@ wheel_mouse_yellow = {  # 工具轮盘提示中鼠标中键图标的黄色高亮
 }
 
 con_colors = [  # 不同角色属性的协奏值能量环的颜色范围列表。
+    # MEASURED from the real ring exemplars in the template dataset
+    # (coco_annotations.json con_<element> crops, sheets 0/1/2/3/13/19):
+    # hue-core percentile boxes over the actual gradient arcs, separation-
+    # trimmed so every element's own capture stays >= 2x any cross capture
+    # (identification is argmax-based). The old hand-tuned boxes captured
+    # only 10-25% of real ring pixels -- the root cause of starved sector
+    # densities and garbage partial reads.
     {
-        'r': (205, 235),
-        'g': (190, 222),  # for yellow spectro
-        'b': (90, 130)
+        'r': (103, 254),
+        'g': (122, 235),  # spectro (gold)
+        'b': (56, 114)
     },
     {
-        'r': (150, 190),  # Red range
-        'g': (95, 140),  # Green range for purple electric
-        'b': (210, 249)  # Blue range
+        'r': (42, 107),
+        'g': (47, 119),  # electro (violet)
+        'b': (108, 178)
     },
     {
-        'r': (200, 230),  # Red range
-        'g': (100, 130),  # Green range    for red fire
-        'b': (75, 105)  # Blue range
+        'r': (103, 252),
+        'g': (65, 128),  # fusion (red)
+        'b': (43, 100)
     },
     {
-        'r': (60, 95),  # Red range
-        'g': (150, 180),  # Green range    for blue ice
-        'b': (210, 245)  # Blue range
+        'r': (38, 71),
+        'g': (111, 180),  # glacio (blue)
+        'b': (98, 255)
     },
     {
-        'r': (70, 110),  # Red range
-        'g': (215, 250),  # Green range    for green wind
-        'b': (155, 190)  # Blue range
+        'r': (23, 111),
+        'g': (96, 255),  # aero (green)
+        'b': (76, 195)
     },
     {
-        'r': (190, 220),  # Red range
-        'g': (65, 105),  # Green range    for havoc
-        'b': (145, 175)  # Blue range
-    }
+        'r': (120, 236),
+        'g': (46, 79),  # havoc (magenta)
+        'b': (105, 172)
+    },
 ]
 
 # BLOOMED full-ring renderings, parallel to `con_colors` (None = element mask
@@ -1540,19 +1529,41 @@ con_colors = [  # 不同角色属性的协奏值能量环的颜色范围列表�
 # NEITHER mask and a genuine full read ~0. The blue FLOOR of this band (110)
 # simultaneously excludes the decoy star-ring state, whose deep saturated
 # gold sits at blue <~80 (user screenshot: 'its not actually full').
-con_glow_colors = [
+con_glow_colors = [  # BLOOMED full-ring rendering per element (see con_ring_profile).
+    # spectro was measured from footage by hand; the other five are MODELLED
+    # by the white-blend transform fitted to that spectro (base -> glow) pair
+    # and applied to each element's measured base range. Replace any entry
+    # with a footage-measured box when available -- the model is a stand-in.
     {
-        'r': (190, 255),
-        'g': (180, 250),  # pale bloomed gold for spectro full ring
-        'b': (135, 210)   # blue FLOOR above the element range's 130 cap, so the
-                          # glow mask can never light on element-coloured pixels
-                          # (the decoy ring renders in-range -- see below)
+        'r': (88, 255),
+        'g': (80, 251),  # spectro (gold)
+        'b': (82, 227)
     },
-    None,  # electric
-    None,  # fire
-    None,  # ice
-    None,  # wind
-    None,  # havoc
+    {
+        'r': (70, 225),
+        'g': (74, 228),  # electro (violet)
+        'b': (127, 240)
+    },
+    {
+        'r': (88, 254),
+        'g': (90, 230),  # fusion (red)
+        'b': (71, 224)
+    },
+    {
+        'r': (66, 218),
+        'g': (98, 240),  # glacio (blue)
+        'b': (83, 255)
+    },
+    {
+        'r': (53, 226),
+        'g': (81, 255),  # aero (green)
+        'b': (61, 243)
+    },
+    {
+        'r': (105, 251),
+        'g': (73, 220),  # havoc (magenta)
+        'b': (124, 238)
+    },
 ]
 
 con_templates = [  # 协奏值能量环的模板名称列表 (对应 `con_colors`)。
