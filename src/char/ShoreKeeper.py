@@ -142,8 +142,21 @@ class ShoreKeeper(BaseChar):
         # checking it every cycle (not just on a skill miss) cashes it in before
         # it overcaps. heavy_click_forte no-ops when the gauge is not charged.
         self.click_resonance()
-        self.heavy_click_forte(self.is_mouse_forte_full)
+        self.spend_forte()
         self.switch_next_char()
+
+    def spend_forte(self, check=None):
+        """Illation (user request: 'if sk bar is full, hold mouse click and
+        animation cancel'): when her forte bar is full, HOLD the mouse until
+        the gauge drains (heavy_click_forte holds by design), then dodge-CANCEL
+        the recovery -- the kit marks Illation safe once the hit registers (the
+        converted butterflies keep attacking), so the cancel costs nothing and
+        frees the field ~0.5s sooner. try_spend_forte routes through this
+        automatically, so mid-string forte spends get the cancel too."""
+        fired = self.heavy_click_forte(check or self.is_mouse_forte_full)
+        if fired:
+            self.dodge_cancel()
+        return fired
 
     def _bind_augusta_outro(self):
         """Register SK as the receiver of Augusta's outro amp when this intro
@@ -225,7 +238,7 @@ class ShoreKeeper(BaseChar):
             # top-off supplies exactly as many as the remaining gap needs.
             self._cast_liberation_now()
             self.click_echo(time_out=0)
-            if not self.heavy_click_forte(self.is_mouse_forte_full):
+            if not self.spend_forte():
                 self.heavy_attack()
         elif beat.name in ('sk_intro', 'sk_loop'):
             # 10 / 16. super intro, lib (immediately), build concerto, outro
@@ -250,7 +263,7 @@ class ShoreKeeper(BaseChar):
         both is safe and adds no dead time.
         """
         self.click_resonance()
-        self.heavy_click_forte(self.is_mouse_forte_full)
+        self.spend_forte()
 
     def switch_next_char(self, *args, **kwargs):
         # Reactive-phase outro hardening (no-op while the scripted rotation

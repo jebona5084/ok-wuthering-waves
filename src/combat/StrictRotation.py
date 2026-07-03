@@ -474,6 +474,11 @@ def try_spend_forte(char, check=None):
     """
     check = check or char.is_forte_full
     if check():
+        # chars may override HOW the forte is spent (ShoreKeeper holds the
+        # click then dodge-cancels the recovery); default is the plain hold.
+        spend = getattr(char, 'spend_forte', None)
+        if spend is not None:
+            return bool(spend(check))
         return bool(char.heavy_click_forte(check))
     return False
 
