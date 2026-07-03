@@ -71,6 +71,13 @@ CON_RING_DISAGREE = 0.2
 # top-offs is 0.05-0.3s, and the engine's almost-full path re-reads after
 # 0.05s, so a genuine full confirms within one extra read.
 ARC_FULL_STREAK_WINDOW = 0.6
+# For the first seconds after a switch-in the gauge renders an INFLATED
+# decorated ring (closed circle + bright element sigil; user screenshot: reads
+# arc=1.00 clean at ~2.2x the true ring area while NOT full). Within this
+# grace, an over-ratio "full" is that entry state and must be rejected; after
+# it, an over-ratio clean full is a genuine full on a stale-low baseline
+# (835f001c: Iuno's were ~8s+ after entry) and may heal the baseline.
+CON_ENTRY_STATE_GRACE = 6.0
 
 
 def _largest_arc_run(covered):
@@ -1013,28 +1020,34 @@ class BaseCombatTask(CombatCheck):
         self.con_read_untrusted = polluted or whiteout
         if whiteout:
             self.log_debug(f'is_con_full whiteout frame (area {max_area}), read untrusted')
+        # Seconds the current char has been on field. The gauge renders an
+        # INFLATED decorated ring (closed gold circle + bright star sigil for
+        # spectro) during the first seconds after switching in -- user
+        # screenshot: that state reads arc=1.00, clean, ~2.1-2.2x the true
+        # ring's area while the concerto is NOT full. Only the entry window has
+        # that state, so time-on-field is the discriminator between "inflated
+        # fake ring" (early) and "true full on a stale-low baseline" (late --
+        # Iuno's stuck-at-0.99 fulls in log 835f001c were ~8s+ after entry).
+        char = self.get_current_char()
+        on_field = time.time() - getattr(char, 'last_switch_in_time', 0) if char else float('inf')
+        past_entry_state = on_field > CON_ENTRY_STATE_GRACE
         if max_is_full and baseline > 0 and max_area > baseline * CON_FULL_MAX_RATIO:
-            # A ring area FAR above the calibrated full size is EITHER bright VFX
-            # flooding the ring box (the f-break burst read 2.22x while the ring
-            # was visibly half full) OR a stale/undersized baseline. The GEOMETRY
-            # tells them apart: a flash floods past the annulus (outside high),
-            # while a genuine full on a bad baseline is a clean contiguous ring
-            # (arc ~1.0, outside low). Log 835f001c froze on the second case:
-            # baseline ~0.5x reality made every genuine full read 2.1-2.2x, this
-            # guard rejected them all, and -- because rejected reads never
-            # re-stamp -- the baseline could never heal, killing every outro and
-            # Iuno's Absolute Fullness. So: clean geometry -> trust the ring and
-            # let the stamp below recalibrate; suspect geometry -> reject and do
-            # NOT let it poison the baseline.
-            if not polluted and arc >= CON_RING_COVERAGE_FULL:
+            # A ring area FAR above the calibrated full size is: bright VFX
+            # flooding the box (f-break burst, 2.22x, high outside), the
+            # inflated ENTRY-STATE ring (clean geometry but only right after a
+            # switch-in), or a genuine full on a stale-low baseline (clean
+            # geometry, LATE in the visit). Heal the baseline only for the last
+            # case; reject the others and never let them recalibrate.
+            if not polluted and arc >= CON_RING_COVERAGE_FULL and past_entry_state:
                 self.logger.info(
                     f'is_con_full area {max_area} is {max_area / baseline:.2f}x baseline but '
-                    f'geometry is a clean full ring (arc={arc:.2f} outside={outside:.2f}) -- '
-                    f'stale baseline, healing it')
+                    f'geometry is a clean full ring (arc={arc:.2f} outside={outside:.2f}) '
+                    f'{on_field:.1f}s after entry -- stale baseline, healing it')
             else:
                 self.logger.warning(
                     f'is_con_full area {max_area} is {max_area / baseline:.2f}x the calibrated '
-                    f'full size -- VFX pollution, treating as not full')
+                    f'full size (on_field {on_field:.1f}s, polluted={polluted}, arc={arc:.2f}) '
+                    f'-- inflated/VFX ring, treating as not full')
                 max_is_full = False
         if max_is_full and (polluted or arc < CON_RING_VETO_ARC):
             # count_rings says full, but the ring is visibly incomplete (arc) or
@@ -1051,25 +1064,29 @@ class BaseCombatTask(CombatCheck):
         if percent != 1 and baseline > 0:
             percent = max_area / baseline
         if not max_is_full:
-            if not polluted and not whiteout and arc >= CON_RING_COVERAGE_FULL:
-                # A clean contiguous full ring is FULL regardless of what the
-                # area channel thinks. count_rings can miss a genuine full (a
-                # transient VFX gap, the contour-convexity test failing) and the
-                # area ratio lies in both directions with a stale baseline (log
-                # 835f001c: genuine fulls at 2.1x stuck at 0.99 forever; a
-                # baseline stamped off a bright glow makes a dim-rendered full
-                # read ~0.5 -- and the old rescue only ran when percent >= 1, so
-                # the dim case could NEVER be confirmed).
+            arc_full_plausible = (percent <= CON_FULL_MAX_RATIO or past_entry_state)
+            if (not polluted and not whiteout and arc >= CON_RING_COVERAGE_FULL
+                    and arc_full_plausible):
+                # A clean contiguous full ring that the AREA channel does not
+                # rule out is FULL: count_rings can miss a genuine full (a
+                # transient VFX gap, the contour-convexity test failing) and a
+                # stale baseline skews the ratio in both directions (log
+                # 835f001c: genuine fulls at 2.1x stuck at 0.99 forever).
+                # `arc_full_plausible` is the area sanity: within the normal
+                # ratio bound always, ABOVE it only late in the visit -- the
+                # inflated entry-state ring (closed circle + star, ~2.2x, user
+                # screenshot 'its not actually full') exists only right after
+                # a switch-in, while a stale-low-baseline true full shows up
+                # late (Iuno's were ~8s+ after entry).
                 #
-                # BUT geometry alone must PERSIST to be trusted: a single frame
-                # where a ring-coloured field sweep (SK's Stellarealm) bridges
-                # the gap sectors reads as a contiguous full ring with low
-                # pollution, and one such frame faked a full on a visibly
-                # partial ring ('sk is not getting full concerto') -- and then
+                # Geometry must also PERSIST: a single frame where a
+                # ring-coloured field sweep bridges the gap sectors reads as a
+                # contiguous full ring, and one such frame faked a full on a
+                # visibly partial ring ('sk is not getting full concerto') and
                 # latched the char cache at 1, defeating the double-read
-                # confirm. So the arc-only promotion needs TWO clean arc-full
-                # sightings within ARC_FULL_STREAK_WINDOW: a moving sweep
-                # cannot hold the bridge across reads, a genuinely full (even
+                # confirm. So the promotion needs TWO clean arc-full sightings
+                # within ARC_FULL_STREAK_WINDOW: a moving sweep cannot hold
+                # the bridge across reads, a genuinely full (even
                 # dim-rendered) ring trivially can. The stamp still
                 # recalibrates the baseline so poisoning is not sticky.
                 now = time.time()
