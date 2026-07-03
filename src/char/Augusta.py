@@ -24,6 +24,11 @@ class Augusta(BaseChar):
     # badge to OCR, so it is tracked by recency of her last con-full exit
     # (ShoreKeeper.outrotime); the buff lasts ~30s, use a safety margin.
     SK_BUFF_WINDOW = 25
+    # Iuno's buff window after her outro (~14s -- the reactive engine's own
+    # extended-intro time_out). Recency is the PRIMARY detector: at 1 stack her
+    # badge shows NO digit, so the OCR reads 0 right when the buff is freshest
+    # (log f8c2363e: iuno=False on every gate check while she visibly had it).
+    IUNO_BUFF_WINDOW = 13
     # Escape hatch: never hold a lit 2nd lib hostage forever -- if the buffs are
     # still not both up after this long, burst anyway rather than waste it.
     MAJESTY_HOLD_MAX = 40
@@ -196,14 +201,30 @@ class Augusta(BaseChar):
                 return char.time_elapsed_accounting_for_freeze(char.outrotime) < self.SK_BUFF_WINDOW
         return False
 
+    def _iuno_buff_active(self):
+        """Iuno's buff is on Augusta.
+
+        PRIMARY: Iuno outro'd within the last IUNO_BUFF_WINDOW seconds -- the
+        engine stamps ``last_outro_time`` on her con-full exits. The badge OCR is
+        only a confirming fallback: at 1 stack the badge shows no digit and reads
+        0, exactly when the buff is freshest, so it must not be the gate."""
+        from src.char.Iuno import Iuno
+        for char in self.task.chars:
+            if isinstance(char, Iuno):
+                if char.time_elapsed_accounting_for_freeze(char.last_outro_time) < self.IUNO_BUFF_WINDOW:
+                    return True
+                break
+        return self.iuno_buff_stacks() >= 1
+
     def _team_buffs_ready(self):
         """Whether Augusta carries BOTH support buffs for her big burst.
 
         User requirement: she must always have SK's and Iuno's buffs before the
-        majesty burst. Iuno's is read from her badge (OCR); SK's from her outro
-        recency. Bounded by MAJESTY_HOLD_MAX so a broken tracker or a dead
-        support can never hold a lit 2nd lib hostage forever."""
-        iuno_ok = self.iuno_buff_stacks() >= 1
+        majesty burst. Both are tracked by outro recency (Iuno's badge OCR only
+        confirms -- it reads 0 at 1 stack). Bounded by MAJESTY_HOLD_MAX so a
+        broken tracker or a dead support can never hold a lit 2nd lib hostage
+        forever."""
+        iuno_ok = self._iuno_buff_active()
         sk_ok = self._sk_buff_active()
         if iuno_ok and sk_ok:
             self._majesty_wait_start = -1.0
