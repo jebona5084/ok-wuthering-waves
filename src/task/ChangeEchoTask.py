@@ -41,6 +41,7 @@ class ChangeEchoTask(BaseWWTask, FindFeature):
 
     def run(self):
         self.info_set('成功声骸数量', 0)
+        self.info_set('失败声骸数量', 0)
         while True:
             enhance = self.find_echo_enhance()
             if not enhance:

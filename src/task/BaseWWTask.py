@@ -926,7 +926,7 @@ class BaseWWTask(BaseTask):
             ['confirm_btn_hcenter_vcenter', 'confirm_btn_highlight_hcenter_vcenter'],
             relative_x=-1, raise_if_not_found=False,
             threshold=0.6,
-            time_out=1)
+            time_out=timeout)
 
     def wait_click_travel(self):
         self.wait_until(self.click_traval_button, raise_if_not_found=True, time_out=10)
