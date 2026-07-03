@@ -80,21 +80,12 @@ class ShoreKeeper(BaseChar):
     def skip_combat_check(self):
         return self.has_intro or self.flying()
 
-    def dodge_cancel(self):
-        """Tap-dodge to cut a cast's landing/recovery (e.g. the Stellarealm
-        deploy) when grounded, so the next action starts sooner. Ported from the
-        reactive custom build; the built-in already dodges in this exact state
-        (auto_dodge), so it does not knock her out of anything she needs."""
-        if not self.flying():
-            self.continues_right_click(0.05)
-            self.sleep(0.05)
-
     def _cast_liberation_now(self):
         """Cast her Resonance Liberation the instant it is ready, so the team buff
         it applies goes up immediately -- she was delaying it behind filler basics
         / a 2.2s attack, so the buff was still down while the cast was available.
-        click_liberation no-ops when it is on cooldown, and the dodge cuts the
-        Stellarealm-deploy recovery. On success the Stellarealm is stamped on the
+        click_liberation no-ops when it is on cooldown. On success the
+        Stellarealm is stamped on the
         buff tracker (fixed 30s field that persists with her off-field) so the
         rotation can read its live remaining. Returns True if it fired.
 
@@ -107,7 +98,6 @@ class ShoreKeeper(BaseChar):
             if self.click_liberation():
                 from src.combat.BuffTracker import get_buff_tracker, SK_LIBERATION
                 get_buff_tracker(self.task).apply(SK_LIBERATION, source=self)
-                self.dodge_cancel()
                 return True
             if attempt == 0 and not self.has_cd('liberation'):
                 self.sleep(0.35)
@@ -212,7 +202,7 @@ class ShoreKeeper(BaseChar):
     # 0.05s later -- a single washed frame of the gold blaze released the hold
     # before the heavy charged, and even a clean hold got its hit cancelled.
     FORTE_HOLD_MIN = 0.6       # keep the button down at least this long
-    FORTE_CANCEL_DELAY = 0.5   # let the released hit register before cancelling
+    FORTE_CANCEL_DELAY = 0.5   # let the released hit register before moving on
     # Suppress full reads this long after a spend: the blaze FADES over ~a
     # second after the held heavy, and re-reading that fade as 'full again'
     # chained back-to-back phantom holds (~3s each: 2s drain-wait + min hold +
@@ -240,20 +230,16 @@ class ShoreKeeper(BaseChar):
         return success
 
     def spend_forte(self, check=None):
-        """Illation (user request: 'if sk bar is full, hold mouse click and
-        animation cancel'): when her forte bar is full, HOLD the mouse until
-        the gauge drains (heavy_click_forte holds by design), then dodge-CANCEL
-        the recovery -- the kit marks Illation safe once the hit registers (the
-        converted butterflies keep attacking), so the cancel costs nothing.
-        The FORTE_CANCEL_DELAY settle before the cancel is what lets the hit
-        actually register. try_spend_forte routes through this automatically,
-        so mid-string forte spends get the cancel too."""
+        """Illation: when her forte bar is full, HOLD the mouse until the
+        gauge drains (heavy_click_forte holds by design), then settle
+        FORTE_CANCEL_DELAY so the released hit actually registers (user: 'the
+        attack doesnt go off'). No dodge cancel afterwards (user: 'remove sk
+        dodge cancels') -- the recovery plays out naturally. try_spend_forte
+        routes through this automatically."""
         held = self.heavy_click_forte(check or self.is_mouse_forte_full)
         if held is not None:
-            # the hold happened -- give the released heavy its impact frames,
-            # then cancel only the recovery
+            # give the released heavy its impact frames before anything else
             self.sleep(self.FORTE_CANCEL_DELAY)
-            self.dodge_cancel()
             # arm the backoff so the fading blaze is not re-read as a fresh
             # full and chained into another (phantom) hold
             self._last_forte_spend = time.time()
@@ -320,11 +306,9 @@ class ShoreKeeper(BaseChar):
             # so casting it HERE lets the trickle run through beats 3-5 for
             # free -- saving it for sk_open2 forfeited exactly that (she
             # re-entered beat 6 at the same 0.32 she left with). Echo stays
-            # saved for sk_open2 (its concerto is instant either way). The
-            # dodge cuts the skill's recovery.
+            # saved for sk_open2 (its concerto is instant either way).
             self._cast_liberation_now()
             self.click_resonance()
-            self.dodge_cancel()
             # forte_check: spend her enhanced heavy the moment it charges during
             # the basics (it is a big concerto source) instead of letting it
             # overcap until the next scripted heavy.
