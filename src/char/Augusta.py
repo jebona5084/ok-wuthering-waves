@@ -554,7 +554,7 @@ class Augusta(BaseChar):
     # hands SK the intro her MUST-claim keys off, so the Augusta -> SK -> Augusta
     # buff cycle actually turns. So she gets the supports' mandatory-style budget.
     OUTRO_TOPOFF_THRESHOLD = 0.6
-    OUTRO_TOPOFF_BUDGET = 4.0
+    OUTRO_TOPOFF_BUDGET = 1.0
 
     def _build_concerto_majesty(self):
         """One concerto-building action that is SAFE for Augusta.
