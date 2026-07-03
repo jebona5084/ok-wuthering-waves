@@ -31,7 +31,9 @@ class Augusta(BaseChar):
     #   (0.95 con, lib2 lit) at ~27s elapsed while the buff was visibly still
     #   active (log 02:16:37), and the rotation then ping-ponged as the two buff
     #   windows never overlapped -> 29.
-    SK_BUFF_WINDOW = 29
+    # ShoreKeeper is S1: her buff lasts 40s (base 30s Stellarealm +10s from the
+    # sequence). The old 29 was tuned before accounting for S1.
+    SK_BUFF_WINDOW = 40
     # - Iuno: the engine's extended-intro FIELD window is 14s, but the buff
     #   itself outlasts it a little; 15s with margin. Her badge OCR stays a
     #   CONFIRMING fallback only: at 1 stack the badge shows NO digit, so it

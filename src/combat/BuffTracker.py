@@ -53,18 +53,19 @@ AUGUSTA_OUTRO = 'augusta_outro'   # 15% amp on receiver; +1 Majesty when the rec
 # Default durations in GAME seconds (the freeze-adjusted clock).
 # The tuned values from the old recency windows are carried over on purpose so
 # swapping the mechanism does not silently retune the rotation:
-# - SK_OUTRO 29.0 keeps Augusta's SK_BUFF_WINDOW ("~30s of game time"; a 25s
-#   window discarded a burst-ready Augusta while the buff was visibly active).
+# - SK buffs are 40.0: the user's ShoreKeeper is S1, which extends her buff
+#   duration to 40s (base Stellarealm is a 30s field; the old 29s SK_OUTRO
+#   window was tuned against footage before accounting for S1 and discarded
+#   still-buffed bursts).
 # - IUNO_OUTRO 15.0 keeps IUNO_BUFF_WINDOW (kit says 14s; +1s margin because the
 #   buff outlasts the engine's 14s field window a little). Its real early end --
 #   the receiver being switched off -- is now modelled by the receiver binding
 #   below instead of guessed by the window.
-# - SK_LIBERATION / IUNO_DOMAIN are fixed 30s field timers per the kit maps
-#   (both persist with the caster off-field; SK's S1 extends hers +10s -- retune
-#   here if that sequence is owned).
+# - IUNO_DOMAIN is a fixed 30s field timer per the kit map (persists with the
+#   caster off-field).
 DURATIONS = {
-    SK_LIBERATION: 30.0,
-    SK_OUTRO: 29.0,
+    SK_LIBERATION: 40.0,
+    SK_OUTRO: 40.0,
     IUNO_OUTRO: 15.0,
     IUNO_DOMAIN: 30.0,
     AUGUSTA_OUTRO: 14.0,
