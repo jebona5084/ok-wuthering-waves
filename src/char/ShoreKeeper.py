@@ -169,29 +169,29 @@ class ShoreKeeper(BaseChar):
         from src.combat.StrictRotation import basic_attacks, aggressive_cancel_enabled
         agg = aggressive_cancel_enabled(self.task)  # jump-cancel filler basics when on
         if beat.name == 'sk_open':
-            # 3. lib (immediately if ready), echo, ba12345, ha, skill
-            # Liberation up front so its team buff is up at once. Echo then feeds
-            # concerto (her basics generate almost none); time_out=0 only fires
-            # when the echo is off cooldown, so it is safe to always call.
+            # 3. lib (immediately if ready), ba12345, ha -- and NOTHING else.
+            # Liberation up front so its team buff is up at once, but echo and
+            # skill are SAVED for sk_open2: measured (log c5607282 + crops),
+            # spending the whole kit here left her outro beat with basics only,
+            # and it ground 0.57 -> 1.00 for 6.9 seconds ('sk didnt build
+            # enough concerto at the beginning'). With echo+skill in hand,
+            # sk_open2 banks the same concerto in ~2s.
             self._cast_liberation_now()
-            self.click_echo(time_out=0)
             # forte_check: spend her enhanced heavy the moment it charges during
             # the basics (it is a big concerto source) instead of letting it
             # overcap until the next scripted heavy.
             basic_attacks(self, 5, forte_check=self.is_mouse_forte_full, cancel=agg)
             self.heavy_attack()
-            self.click_resonance()
         elif beat.name == 'sk_open2':
-            # 7. lib (immediately if ready), echo, ba12345, ha, skill+forte, outro
-            # Liberation up front so its team buff is up at once; skill+forte are
-            # frame-checked (no-op on cooldown) and bank the rest of the concerto.
+            # 7. lib (if ready), echo, skill+forte, ba12345, ha, outro
+            # Echo and skill were SAVED by sk_open (see above), so both big
+            # concerto chunks land HERE, up front -- the ring is near full
+            # within ~2s and the outro top-off only trims the remainder,
+            # instead of the old 6.9s basics grind.
             self._cast_liberation_now()
             self.click_echo(time_out=0)
-            basic_attacks(self, 5, forte_check=self.is_mouse_forte_full, cancel=agg)
-            self.heavy_attack()
-            self.task.jump(after_sleep=0.2)
             self._spend_skill_and_forte()
-            self.continues_normal_attack(1.6)
+            basic_attacks(self, 5, forte_check=self.is_mouse_forte_full, cancel=agg)
             self.heavy_attack()
         elif beat.name in ('sk_intro', 'sk_loop'):
             # 10 / 16. super intro, lib (immediately), build concerto, outro
