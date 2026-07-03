@@ -235,7 +235,19 @@ class ShoreKeeper(BaseChar):
         FORTE_CANCEL_DELAY so the released hit actually registers (user: 'the
         attack doesnt go off'). No dodge cancel afterwards (user: 'remove sk
         dodge cancels') -- the recovery plays out naturally. try_spend_forte
-        routes through this automatically."""
+        routes through this automatically.
+
+        BANKED during the 1st rotation (user: 'in the 1st rotation, dont let
+        sk fbreak'): while the scripted opener drives, the forte is never
+        spent -- every spend site funnels through this method (the basic
+        string's forte_check, sk_open2's heavy slot, _spend_skill_and_forte,
+        build_concerto's spend rung), so one gate here holds the charge until
+        the reactive phase takes over."""
+        from src.combat.VariableRotation import get_active_rotation
+        if get_active_rotation(self.task).is_active():
+            self.logger.info('ShoreKeeper: forte banked (no spend during the '
+                             '1st rotation)')
+            return False
         held = self.heavy_click_forte(check or self.is_mouse_forte_full)
         if held is not None:
             # give the released heavy its impact frames before anything else
@@ -313,7 +325,7 @@ class ShoreKeeper(BaseChar):
             # the basics (it is a big concerto source) instead of letting it
             # overcap until the next scripted heavy.
             basic_attacks(self, 3, forte_check=self.is_mouse_forte_full, cancel=agg)
-            self.heavy_attack()
+            self._heavy_unless_banked()
         elif beat.name == 'sk_open2':
             # 7. lib-check (cd skip ~0.1s), echo, forte heavy, outro top-off.
             # Echo was saved by sk_open; the forte heavy follows IMMEDIATELY
@@ -324,7 +336,7 @@ class ShoreKeeper(BaseChar):
             self._cast_liberation_now()
             self.click_echo(time_out=0)
             if not self.spend_forte():
-                self.heavy_attack()
+                self._heavy_unless_banked()
         elif beat.name in ('sk_intro', 'sk_loop'):
             # 10 / 16. super intro, lib (immediately), build concerto, outro
             if beat.intro:
@@ -336,6 +348,23 @@ class ShoreKeeper(BaseChar):
             self._cast_liberation_now()
             self.click_echo(time_out=0)
             self._spend_skill_and_forte()
+
+    def _heavy_unless_banked(self):
+        """Scripted heavy slot, forte-safe during the opener: at full forte a
+        held heavy IS Illation (heavy_attack holds the mouse 0.6s), so with the
+        1st-rotation forte ban active a charged bar swaps the heavy for two
+        basics instead of breaking the bank (user: 'in the 1st rotation, dont
+        let sk fbreak'). Outside the scripted rotation, or with the bar not
+        full, the normal heavy fires."""
+        from src.combat.VariableRotation import get_active_rotation
+        from src.combat.StrictRotation import basic_attacks
+        if (get_active_rotation(self.task).is_active()
+                and self.is_mouse_forte_full()):
+            self.logger.info('ShoreKeeper: heavy slot skipped (forte banked); '
+                             'basics instead')
+            basic_attacks(self, 2)
+            return
+        self.heavy_attack()
 
     def _spend_skill_and_forte(self):
         """Spend BOTH skill and forte for concerto, not either/or.
