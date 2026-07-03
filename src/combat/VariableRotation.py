@@ -183,6 +183,12 @@ class VariableRotation(StrictRotation):
         self._last_seen = time.time()
         beat = self.current_beat()
         if beat.char != char.name:
+            if self.index == 0:
+                # Opener's first beat (sk_forte): switch to its char instead of
+                # resyncing forward past it (see StrictRotation.run_current).
+                logger.info(f'{self.LABEL} opener start: switching to {beat.char}')
+                char.switch_next_char()
+                return True
             if not self.resync(char.name):
                 logger.info(f'{self.LABEL} cannot place {char.name}, falling back')
                 return False

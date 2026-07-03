@@ -73,6 +73,7 @@ def target_team():
 
 
 EXPECTED_OPENER = [
+    'ShoreKeeper',  # sk_forte pre-fill
     'Augusta', 'Iuno', 'ShoreKeeper', 'Iuno', 'Augusta', 'Iuno',
     'ShoreKeeper', 'Iuno', 'Augusta', 'ShoreKeeper',
 ]
@@ -119,7 +120,7 @@ class TestStrictRotation(unittest.TestCase):
 
     def test_priority_must_for_current_no_for_others(self):
         rot = StrictRotation(FakeTask(target_team()))
-        rot.index = 0  # aug_open
+        rot.index = 1  # aug_open
         self.assertEqual(rot.priority_for('Augusta'), MUST)
         self.assertEqual(rot.priority_for('Iuno'), NO)
         self.assertEqual(rot.priority_for('ShoreKeeper'), NO)
@@ -151,10 +152,10 @@ class TestStrictRotation(unittest.TestCase):
 
     def test_resync_finds_nearest_future_beat(self):
         rot = StrictRotation(FakeTask(target_team()))
-        rot.index = 0  # expects Augusta, but ShoreKeeper is on field
+        rot.index = 1  # expects Augusta, but ShoreKeeper is on field
         self.assertTrue(rot.resync('ShoreKeeper'))
         self.assertEqual(rot.current_beat().char, 'ShoreKeeper')
-        self.assertEqual(rot.index, 2)  # sk_open
+        self.assertEqual(rot.index, 3)  # sk_open
 
     def test_resync_wraps_through_loop(self):
         rot = StrictRotation(FakeTask(target_team()))
@@ -230,10 +231,11 @@ class TestStrictRotation(unittest.TestCase):
         calls = []
         aug.perform_beat = lambda beat: calls.append(('perform', beat.name))
         aug.switch_next_char = lambda free_intro=False: calls.append(('switch', free_intro))
-        rot.index = 0
+        rot.maybe_reset()  # sync combat tracking so run_current won't rewind
+        rot.index = 1  # aug_open
         self.assertTrue(rot.run_current(aug))
         self.assertEqual(calls, [('perform', 'aug_open'), ('switch', False)])
-        self.assertEqual(rot.index, 1)
+        self.assertEqual(rot.index, 2)
 
     def test_run_current_outro_beat_tops_off_concerto_then_switches(self):
         # On an OUTRO beat run_current briefly tops off concerto (bounded) so the
@@ -246,18 +248,18 @@ class TestStrictRotation(unittest.TestCase):
         sk.perform_beat = lambda beat: events.append(('beat', beat.name))
         sk.is_con_full = lambda: False  # never reaches full
         sk.switch_next_char = lambda *a, **k: events.append(('switch', a, k))
-        rot.index = 6  # sk_open2, outro=True
+        rot.index = 7  # sk_open2, outro=True
         # bound the top-off poll so the never-full case does not spin for 6s:
         # sk_open2 bakes its per-beat budget into the Beat itself, so patch the
         # beat list too, not just the global fallback constant
         fast_beats = list(BEATS)
-        fast_beats[6] = fast_beats[6]._replace(topoff=0.02)
+        fast_beats[7] = fast_beats[7]._replace(topoff=0.02)
         with patch('src.combat.StrictRotation.OUTRO_BEAT_TOPOFF_TIME_OUT', 0.02), \
                 patch('src.combat.StrictRotation.BEATS', fast_beats):
             self.assertTrue(rot.run_current(sk))
         # con never reached full -> plain swap (free_intro=False), no faked outro
         self.assertEqual(events, [('beat', 'sk_open2'), ('switch', (), {'free_intro': False})])
-        self.assertEqual(rot.index, 7)  # still advanced (strict sequence)
+        self.assertEqual(rot.index, 8)  # still advanced (strict sequence)
 
     def test_run_current_outro_beat_no_topoff_when_already_full(self):
         task = FakeTask(target_team())
@@ -268,7 +270,7 @@ class TestStrictRotation(unittest.TestCase):
         sk.perform_beat = lambda beat: events.append(('beat', beat.name))
         sk.is_con_full = lambda: True  # already full -> no top-off wait
         sk.switch_next_char = lambda *a, **k: events.append(('switch', a, k))
-        rot.index = 6  # sk_open2, outro=True
+        rot.index = 7  # sk_open2, outro=True
         self.assertTrue(rot.run_current(sk))
         self.assertEqual(task.wait_until_calls, [])  # no wait needed
         # already full -> force the outro path (free_intro=True)
@@ -294,10 +296,10 @@ class TestStrictRotation(unittest.TestCase):
         sk.perform_beat = lambda beat: events.append(('beat', beat.name))
         sk.is_con_full = con_full
         sk.switch_next_char = lambda *a, **k: events.append(('switch', a, k))
-        rot.index = 6  # sk_open2, outro=True
+        rot.index = 7  # sk_open2, outro=True
         self.assertTrue(rot.run_current(sk))
         self.assertEqual(events, [('beat', 'sk_open2'), ('switch', (), {'free_intro': True})])
-        self.assertEqual(rot.index, 7)  # advanced exactly once (no re-entry / switch-back)
+        self.assertEqual(rot.index, 8)  # advanced exactly once (no re-entry / switch-back)
 
     def test_run_current_non_outro_beat_switches_plain(self):
         task = FakeTask(target_team())
@@ -308,7 +310,7 @@ class TestStrictRotation(unittest.TestCase):
         aug.perform_beat = lambda beat: events.append(('beat', beat.name))
         aug.is_con_full = lambda: self.fail('non-outro beat must not poll concerto')
         aug.switch_next_char = lambda *a, **k: events.append(('switch', a, k))
-        rot.index = 0  # aug_open, outro=False
+        rot.index = 1  # aug_open, outro=False
         self.assertTrue(rot.run_current(aug))
         # non-outro -> plain swap, free_intro=False
         self.assertEqual(events, [('beat', 'aug_open'), ('switch', (), {'free_intro': False})])
@@ -326,7 +328,7 @@ class TestStrictRotation(unittest.TestCase):
         sk.flying = lambda: True
         sk.wait_down = lambda *a, **k: events.append('grounded')
         sk.switch_next_char = lambda *a, **k: events.append(('switch', k.get('free_intro')))
-        rot.index = 6  # sk_open2, outro=True
+        rot.index = 7  # sk_open2, outro=True
         self.assertTrue(rot.run_current(sk))
         self.assertEqual(events, ['grounded', ('switch', True)])  # grounded THEN outro
 
@@ -343,7 +345,7 @@ class TestStrictRotation(unittest.TestCase):
         aug.perform_beat = lambda beat: None
         aug.wait_down = lambda *a, **k: events.append('grounded')  # must NOT be called
         aug.switch_next_char = lambda *a, **k: events.append('switch')
-        rot.index = 0  # aug_open, outro=False
+        rot.index = 1  # aug_open, outro=False
         self.assertTrue(rot.run_current(aug))
         self.assertEqual(task.jumped, 1)      # jump-cancelled once before the swap
         self.assertEqual(events, ['switch'])  # no grounding on a non-outro beat
@@ -359,22 +361,26 @@ class TestStrictRotation(unittest.TestCase):
         events = []
         aug.perform_beat = lambda beat: None
         aug.switch_next_char = lambda *a, **k: events.append('switch')
-        rot.index = 0  # non-outro
+        rot.index = 1  # non-outro
         self.assertTrue(rot.run_current(aug))
         self.assertEqual(task.jumped, 0)      # toggle off -> plain swap, no cancel
         self.assertEqual(events, ['switch'])
 
     def test_run_current_resets_to_opener_on_first_call(self):
         # _last_combat_start starts unset, so the first run_current rewinds to
-        # the opener even if index was nudged beforehand.
+        # the opener even if index was nudged beforehand. Beat 0 is now SK's
+        # forte pre-fill, so an on-field Augusta is switched OUT (not resynced
+        # forward past the fill) and the index stays on beat 0 for SK.
         task = FakeTask(target_team())
         rot = StrictRotation(task)
         rot.index = 9
         aug = task.chars[0]
-        aug.perform_beat = lambda beat: None
-        aug.switch_next_char = lambda free_intro=False: None
-        rot.run_current(aug)
-        self.assertEqual(rot.index, 1)  # ran aug_open (0) then advanced to 1
+        switches = []
+        aug.perform_beat = lambda beat: self.fail('Augusta must not run sk_forte')
+        aug.switch_next_char = lambda *a, **k: switches.append(1)
+        self.assertTrue(rot.run_current(aug))
+        self.assertEqual(rot.index, 0)   # rewound and held for ShoreKeeper
+        self.assertEqual(switches, [1])  # handed the field to the beat's char
 
     def test_run_current_inactive_returns_false(self):
         task = FakeTask(team('Augusta', 'Iuno', 'Verina'))
@@ -406,10 +412,10 @@ class TestStrictRotation(unittest.TestCase):
         aug = task.chars[0]
         aug.perform_beat = lambda beat: (_ for _ in ()).throw(ValueError('boom'))
         aug.switch_next_char = lambda *a, **k: self.fail('must not switch on failure')
-        rot.index = 0
+        rot.index = 1  # aug_open
         with self.assertRaises(ValueError):
             rot.run_current(aug)
-        self.assertEqual(rot.index, 1)
+        self.assertEqual(rot.index, 2)
 
     def test_topoff_concerto_bails_early_when_switch_possible(self):
         # "switch whenever possible": if a ready target exists, the top-off hands

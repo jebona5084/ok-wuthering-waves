@@ -61,6 +61,9 @@ Beat = namedtuple('Beat', ['name', 'char', 'intro', 'outro', 'topoff'],
 # The rotation, transcribed from the user's step list.
 #
 #   Opener (played once):
+#     0  Sk   plain basics until the Illation (forte) bar is full -- charged
+#             held heavy for her later beats (user: 'sk fills forte before
+#             doing current rotation'); kit stays untouched
 #     1  Aug  skill
 #     2  Iuno skill
 #     3  Sk   ba123 lib ba12 ha skill
@@ -91,6 +94,7 @@ SK_OUTRO_BEAT_TOPOFF_TIME_OUT = 6.0
 # i.e. an outro on one beat hands the next beat its intro.
 BEATS = [
     # opener
+    Beat('sk_forte',    'ShoreKeeper', intro=False, outro=False),
     Beat('aug_open',    'Augusta',     intro=False, outro=False),
     Beat('iuno_open1',  'Iuno',        intro=False, outro=False),
     Beat('sk_open',     'ShoreKeeper', intro=False, outro=False),
@@ -115,7 +119,7 @@ BEATS = [
 
 # Index of the first loop beat; ``advance`` wraps here instead of to 0 so the
 # opener is never replayed mid-combat.
-LOOP_START = 10
+LOOP_START = 11
 
 # Reactive-phase (post-opener) outro top-off budget: finish a near-full ring
 # before a swap so it outros. Kept SHORT (user-tuned: 'OUTRO_TOPOFF_TIME_OUT =
@@ -357,6 +361,15 @@ class StrictRotation:
         self._last_seen = time.time()  # mark active-in-combat (for flicker debounce)
         beat = self.current_beat()
         if beat.char != char.name:
+            if self.index == 0:
+                # The opener's FIRST beat (sk_forte) must actually run: combat
+                # usually starts with Augusta on field (party slot 1), and a
+                # forward resync would silently skip it. Hand the field to the
+                # beat's char instead -- priority_for already marks them MUST,
+                # so the engine switches straight to them.
+                logger.info(f'{self.LABEL} opener start: switching to {beat.char}')
+                char.switch_next_char()
+                return True
             if not self.resync(char.name):
                 logger.info(f'{self.LABEL} cannot place {char.name}, falling back')
                 return False
