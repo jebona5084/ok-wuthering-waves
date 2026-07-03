@@ -921,10 +921,18 @@ class BaseCombatTask(CombatCheck):
     def is_con_full(self):
         """检查当前角色的协奏值是否已满。
 
+        Two independent channels, OR-ed:
+        1. the ring read (area + angular-arc geometry on the concerto ring), and
+        2. the portrait-side full-concerto marker template.
+        The ring read can FALSE-NEGATIVE when persistent field VFX (e.g. Iuno's
+        Full Moon Domain arcs) pollute the ring crop past the pollution/veto
+        bounds; the portrait marker sits far from combat VFX, so it rescues a
+        genuine full the ring channel had to distrust.
+
         Returns:
             bool: 如果协奏值已满则返回 True, 否则 False。
         """
-        return self.get_current_con() == 1
+        return self.get_current_con() == 1 or self.con_full_by_template()
 
     def _ensure_ring_index(self):
         """确保当前角色协奏值环的颜色索引已识别。
@@ -1185,6 +1193,29 @@ class BaseCombatTask(CombatCheck):
             self.logger.warning(f'is_con_full found multiple rings {ring_count}')
 
         return the_area, is_full
+
+    def con_full_by_template(self):
+        """Portrait-side full-concerto marker for the CURRENT character.
+
+        Mirrors the trusted ``update_lib_portrait_icon`` pattern: match the
+        element-specific ``con_full_*`` template (by the char's ring colour) in
+        the char's own ``con_mark_char_N`` portrait box. This area is far from
+        the on-field ring, so field VFX that pollute the ring crop (Iuno's Full
+        Moon Domain) cannot fake or hide it -- it is the rescue channel for
+        ring-read false negatives.
+
+        Returns:
+            bool: True if the marker confirms the current char's concerto full.
+        """
+        char = self.get_current_char()
+        if char is None or char.ring_index < 0:
+            return False
+        box = self.get_box_by_name('con_mark_char_{}'.format(char.index + 1))
+        match = self.find_one(con_full_templates[char.ring_index], box=box, threshold=0.8)
+        if match:
+            self.log_debug('con full by portrait template {} {}'.format(char, match))
+            return True
+        return False
 
     def update_lib_portrait_icon(self):
         # self.ensure_con_lib_boxes()
