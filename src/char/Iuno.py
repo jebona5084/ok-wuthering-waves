@@ -44,6 +44,28 @@ class Iuno(BaseChar):
                 return SwitchPriority.MUST
             if priority == NO:
                 return SwitchPriority.NO
+        # Reactive field-time guarantee (user report: 'after 1st rotation,
+        # iuno isn't getting enough field time to provide buffs'): the mutual
+        # Augusta<->SK claims leave Iuno fielding only on plain exits that
+        # happen to fall to her. When her amp is NOT banked and SK's field
+        # buff is comfortably live (nothing urgent for SK to add), Iuno
+        # claims the next PLAIN exit so the cycle refills her amp before
+        # Augusta's burst wants it. Outro exits (has_intro) keep their
+        # routing untouched -- SK's outro belongs to Augusta -- and she never
+        # claims right after leaving (no self-bounce).
+        if not has_intro:
+            try:
+                from src.combat.BuffTracker import (get_buff_tracker,
+                                                    IUNO_OUTRO, SK_LIBERATION)
+                tracker = get_buff_tracker(self.task)
+                if (tracker.has(IUNO_OUTRO)
+                        and tracker.remaining(IUNO_OUTRO) <= 0
+                        and tracker.remaining(SK_LIBERATION) > 8
+                        and self.time_elapsed_accounting_for_freeze(
+                            self.last_switch_time) > 4):
+                    return SwitchPriority.MUST
+            except Exception:
+                self.logger.debug('Iuno field-time claim failed', exc_info=True)
         return super().get_switch_priority(current_char, has_intro, target_low_con)
 
     def perform_beat(self, beat):
@@ -275,9 +297,18 @@ class Iuno(BaseChar):
         from src.combat.VariableRotation import reactive_outro_topoff
         from src.combat.StrictRotation import confirm_con_full
         from src.combat.BuffTracker import get_buff_tracker, IUNO_OUTRO
-        reactive_outro_topoff(self, kwargs, threshold=0.6, aggressive=True,
-                              mandatory=True)
         tracker = get_buff_tracker(self.task)
+        # When her amp is NOT banked, this exit is the one that must bank it:
+        # drop the top-off threshold to 0 so the exit builds to full from ANY
+        # level (bounded by the top-off's own budget) instead of plain-swapping
+        # from below 0.6 and wasting the visit ('iuno isn't getting enough
+        # field time to provide buffs' -- short visits entered low never
+        # crossed 0.6, so nothing ever built).
+        threshold = 0.6
+        if tracker.has(IUNO_OUTRO) and tracker.remaining(IUNO_OUTRO) <= 0:
+            threshold = 0.0
+        reactive_outro_topoff(self, kwargs, threshold=threshold, aggressive=True,
+                              mandatory=True)
         # Will this exit be an OUTRO? free_intro is only ever set on a
         # CONFIRMED-full ring (both top-off paths), so it implies con full and
         # skips a second read; otherwise double-read the ring ourselves --
