@@ -228,7 +228,7 @@ REACTIVE_TOPOFF_THRESHOLD = 0.7
 
 
 def reactive_outro_topoff(char, kwargs, threshold=REACTIVE_TOPOFF_THRESHOLD,
-                          aggressive=False):
+                          aggressive=False, mandatory=False):
     """Finish a near-full concerto ring before a REACTIVE-phase swap so it outros.
 
     Call from a character's ``switch_next_char`` override, passing that call's
@@ -240,8 +240,13 @@ def reactive_outro_topoff(char, kwargs, threshold=REACTIVE_TOPOFF_THRESHOLD,
     ``aggressive``: build with the high-yield ``build_concerto`` (liberation /
     echo / skill, bounded) instead of plain basics. Use for a character whose
     OUTRO buff transfer depends on reaching full and whose concerto comes mostly
-    from echo/skill rather than basics (Iuno). Plain basics (default) suit a main
-    DPS (Augusta) that must not burn its liberation just to top off.
+    from echo/skill rather than basics (Iuno, ShoreKeeper). Plain basics
+    (default) suit a main DPS (Augusta) that must not burn its liberation just
+    to top off.
+
+    ``mandatory``: this character's outro buff is REQUIRED by the team cycle
+    (Augusta may not burst without it) -- the top-off never bails to an early
+    swap and gets a longer build budget.
 
     Gated on the scripted rotation being INACTIVE: while the coordinator drives
     (the opener) it already tops off before its own hand-offs, and a top-off here
@@ -253,7 +258,8 @@ def reactive_outro_topoff(char, kwargs, threshold=REACTIVE_TOPOFF_THRESHOLD,
     con = char.get_current_con()
     if threshold <= con < 1:
         if aggressive:
-            topoff_concerto(char, 2.5)
+            topoff_concerto(char, 4.0 if mandatory else 2.5,
+                            allow_early_switch=not mandatory)
         else:
             char.continues_normal_attack(0.8, until_con_full=True)
     if char.is_con_full():

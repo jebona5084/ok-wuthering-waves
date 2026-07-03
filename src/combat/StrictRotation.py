@@ -560,7 +560,7 @@ def can_switch_now(char):
         return False
 
 
-def topoff_concerto(char, time_out, checks_per_action=3):
+def topoff_concerto(char, time_out, checks_per_action=3, allow_early_switch=True):
     """Build concerto to full, re-reading the ring MORE FREQUENTLY than once per
     build action, so the outro fires the instant the ring completes.
 
@@ -583,9 +583,13 @@ def topoff_concerto(char, time_out, checks_per_action=3):
         # until the beat advances (outro beats still build to full). Config-gated
         # (default on) -- turn it off to always build to full for the outro buff.
         # HOLD BAND: never bail when the ring is >= TOPOFF_HOLD_FROM -- that close,
-        # finishing the ring (and its outro buff) beats the early swap.
-        if (switch_while_building_enabled(char.task) and can_switch_now(char)
-                and char.get_current_con() < TOPOFF_HOLD_FROM):
+        # finishing the ring (and its outro buff) beats the early swap. Callers
+        # whose outro buff is MANDATORY for the team cycle (Iuno/SK feeding
+        # Augusta's burst) pass allow_early_switch=False: their top-off never
+        # bails at all -- log evidence showed the bail robbing their outros at
+        # 0.60-0.90 con every reactive cycle.
+        if (allow_early_switch and switch_while_building_enabled(char.task)
+                and can_switch_now(char) and char.get_current_con() < TOPOFF_HOLD_FROM):
             return False
         build_concerto(char)                        # one high-yield build action
         for _ in range(max(1, checks_per_action)):  # then poll the ring frequently

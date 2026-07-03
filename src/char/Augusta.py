@@ -20,6 +20,14 @@ class Augusta(BaseChar):
     # (0.501, 0.840)); widened left so "10" fits.
     IUNO_BUFF_BOX = (1886, 1789, 1950, 1839)
     IUNO_BUFF_TARGET = 10
+    # Augusta's big burst must ride BOTH support buffs. SK's outro buff has no
+    # badge to OCR, so it is tracked by recency of her last con-full exit
+    # (ShoreKeeper.outrotime); the buff lasts ~30s, use a safety margin.
+    SK_BUFF_WINDOW = 25
+    # Escape hatch: never hold a lit 2nd lib hostage forever -- if the buffs are
+    # still not both up after this long, burst anyway rather than waste it.
+    MAJESTY_HOLD_MAX = 40
+    _majesty_wait_start = -1.0
 
     def do_perform(self):
         from src.combat.VariableRotation import get_active_rotation
@@ -179,6 +187,40 @@ class Augusta(BaseChar):
             heavy(self, cancel=agg)              # ha
         self.send_echo_key()                     # echo
 
+    def _sk_buff_active(self):
+        """ShoreKeeper's outro buff is (approximately) live: she exited con-full
+        (which stamps her ``outrotime``) within the last SK_BUFF_WINDOW seconds."""
+        from src.char.ShoreKeeper import ShoreKeeper
+        for char in self.task.chars:
+            if isinstance(char, ShoreKeeper):
+                return char.time_elapsed_accounting_for_freeze(char.outrotime) < self.SK_BUFF_WINDOW
+        return False
+
+    def _team_buffs_ready(self):
+        """Whether Augusta carries BOTH support buffs for her big burst.
+
+        User requirement: she must always have SK's and Iuno's buffs before the
+        majesty burst. Iuno's is read from her badge (OCR); SK's from her outro
+        recency. Bounded by MAJESTY_HOLD_MAX so a broken tracker or a dead
+        support can never hold a lit 2nd lib hostage forever."""
+        iuno_ok = self.iuno_buff_stacks() >= 1
+        sk_ok = self._sk_buff_active()
+        if iuno_ok and sk_ok:
+            self._majesty_wait_start = -1.0
+            return True
+        now = time.time()
+        if self._majesty_wait_start < 0:
+            self._majesty_wait_start = now
+            self.logger.info(f'Augusta: holding 2nd lib for team buffs '
+                             f'(iuno={iuno_ok} sk={sk_ok})')
+        if now - self._majesty_wait_start > self.MAJESTY_HOLD_MAX:
+            self.logger.info(f'Augusta: team buffs still missing after '
+                             f'{self.MAJESTY_HOLD_MAX}s (iuno={iuno_ok} sk={sk_ok}), '
+                             f'bursting anyway')
+            self._majesty_wait_start = -1.0
+            return True
+        return False
+
     def _do_perform_default(self):
         time_out = switch_time
         if self.has_intro:
@@ -192,7 +234,10 @@ class Augusta(BaseChar):
         while timeout():
             self.cycle_start()
             if self.check_majesty():
-                # build to max stacks before casting -- see _build_and_cast_majesty
+                if not self._team_buffs_ready():
+                    # hold the big burst until BOTH support buffs are on her --
+                    # switch out so the cycle brings Iuno/SK back to apply them.
+                    return self.switch_next_char()
                 self.logger.debug('Augusta majesty icon lit; building to target')
                 if self._build_and_cast_majesty():
                     self.send_echo_key()
@@ -215,6 +260,8 @@ class Augusta(BaseChar):
                             return self.switch_next_char()
                 else:
                     if self.check_majesty():
+                        if not self._team_buffs_ready():
+                            return self.switch_next_char()  # burst waits for buffs
                         self.wait_down()
                         if self._build_and_cast_majesty():
                             self.send_echo_key()

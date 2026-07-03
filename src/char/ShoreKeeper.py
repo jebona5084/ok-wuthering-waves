@@ -26,14 +26,6 @@ class ShoreKeeper(BaseChar):
             return SwitchPriority.MUST
         return super().get_switch_priority(current_char, has_intro, target_low_con)
 
-    # Concerto top-off window, mirrored from the reactive quickswap chars in the
-    # custom collection (Mornye/Jiyan/custom ShoreKeeper all use 0.7): when the
-    # ring is close but not quite full on the way out, spend up to 0.8s of
-    # forte-feeding basics to finish it so the swap fires as a real OUTRO (which
-    # transfers her team buff). Below the threshold the ring is too far to close
-    # in the budget, so skip the top-off and just swap.
-    TOP_OFF_THRESHOLD = 0.7
-
     def skip_combat_check(self):
         return self.has_intro or self.flying()
 
@@ -160,14 +152,15 @@ class ShoreKeeper(BaseChar):
         self.heavy_click_forte(self.is_mouse_forte_full)
 
     def switch_next_char(self, *args, **kwargs):
-        # During the strict rotation the coordinator already fills the ring
-        # before calling this (con == 1.0), so the top-off is skipped there; it
-        # only bites in the reactive phase (after STOP_AFTER_FIRST_ROTATION hands
-        # the sustained fight to the reactive engine), where an almost-full exit
-        # would otherwise downgrade to a plain swap and drop her outro buff.
-        con = self.get_current_con()
-        if self.TOP_OFF_THRESHOLD <= con < 1:
-            self.continues_normal_attack(0.8, until_con_full=True)
+        # Reactive-phase outro hardening (no-op while the scripted rotation
+        # drives). Her outro buff is REQUIRED by the cycle -- Augusta must carry
+        # it into her burst -- and 0.8s of plain basics barely moved her ring
+        # (log: swapped out at 0.89/0.74 con). Build with her real concerto
+        # sources instead (echo/skill/lib via the aggressive top-off) and never
+        # early-bail (mandatory), then leave via a forced outro when full.
+        from src.combat.VariableRotation import reactive_outro_topoff
+        reactive_outro_topoff(self, kwargs, threshold=0.6, aggressive=True,
+                              mandatory=True)
         if self.is_con_full():
             self.outrotime = time.time()
             self.dodge_count = 5

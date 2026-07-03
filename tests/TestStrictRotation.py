@@ -442,6 +442,26 @@ class TestStrictRotation(unittest.TestCase):
         self.assertTrue(topoff_concerto(char, 2.5))   # ...but we finish the ring
         self.assertEqual(builds['n'], 1)
 
+    def test_topoff_concerto_mandatory_never_bails(self):
+        # allow_early_switch=False (mandatory buff-carriers Iuno/SK): builds to
+        # full even when a ready target exists and con is below the hold band.
+        from src.combat.StrictRotation import topoff_concerto
+        task = FakeTask(target_team())
+        char = task.chars[2]
+        full = {'v': False}
+        char.is_con_full = lambda: full['v']
+        char.get_current_con = lambda: 0.65             # far below the hold band
+        task._choose_switch_target = lambda c, has_intro=False, target_low_con=False: task.chars[0]
+        task._target_has_switch_cd = lambda c: False    # target ready to swap
+        builds = {'n': 0}
+
+        def build_and_fill(*a, **k):
+            builds['n'] += 1
+            full['v'] = True
+        char.click = build_and_fill
+        self.assertTrue(topoff_concerto(char, 2.5, allow_early_switch=False))
+        self.assertEqual(builds['n'], 1)                # built, did not bail
+
     def test_topoff_concerto_no_early_bail_when_toggle_off(self):
         # 'Switch While Building' off -> build to full even when a target is ready
         from src.combat.StrictRotation import topoff_concerto
