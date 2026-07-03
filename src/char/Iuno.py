@@ -74,6 +74,22 @@ class Iuno(BaseChar):
         while self.task.find_feature("iuno_jump", box="box_extra_action", threshold=0.6):
             self.task.jump(after_sleep=0.1)
 
+    # bound for holding the special heavy's mouse press (released early when the
+    # prompt clears).
+    SPECIAL_HEAVY_HOLD_MAX = 1.5
+
+    def _hold_special_heavy(self):
+        """Iuno's special heavy is a HOLD, not a click: press and KEEP the mouse
+        held until the extra-action prompt clears (bounded). A plain click fires
+        an ordinary heavy and the buff never applies. The buff also requires FULL
+        concerto -- callers gate on is_con_full() before invoking this."""
+        self.task.mouse_down()
+        self.task.wait_until(
+            lambda: not self.task.find_feature("iuno_heavy", box="box_extra_action",
+                                               threshold=0.55),
+            time_out=self.SPECIAL_HEAVY_HOLD_MAX)
+        self.task.mouse_up()
+
     def _iuno_burst(self):
         """Explicit burst: jump-cancel, lib, skill, ba1234, skill, ba, ha.
 
@@ -140,25 +156,24 @@ class Iuno(BaseChar):
         while self.time_elapsed_accounting_for_freeze(start) < time_out:
             cycle_start = time.time()
             heavy_success = False
-            while self.time_elapsed_accounting_for_freeze(
-                    self.last_heavy) > 20 and self.task.find_feature("iuno_heavy",
-                                                                     box="box_extra_action",
-                                                                     threshold=0.6):
-                # 特殊重击可用
+            while (self.time_elapsed_accounting_for_freeze(self.last_heavy) > 20
+                   and self.task.find_feature("iuno_heavy", box="box_extra_action",
+                                              threshold=0.6)
+                   and self.is_con_full()):
+                # special heavy: its buff requires FULL concerto and a HELD click
+                # (a plain click fires an ordinary heavy and wastes the 20s CD).
+                # Below full con we skip and keep building -- the switch-out
+                # top-off finishes the ring and fires it there instead.
                 self.sleep(0.05)
-                self.heavy_attack()
+                self._hold_special_heavy()
                 self.sleep(0.05)
                 heavy_success = True
             if heavy_success:
                 self.last_heavy = time.time()
                 # Settle so the special-heavy BUFF registers before the caller
-                # acts on it. do_everything otherwise returns with only a 0.05s
-                # tail, and the burst's outro top-off / grounding / swap (or the
-                # reactive switch) then cancel the heavy before its buff lands.
-                # 1.2s: 0.35s clipped the slam mid-animation and the buff was
-                # still missing at 0.8s (the hit registers late in the ~1s+
-                # animation), so give it clear margin.
-                self.sleep(1.2)
+                # acts on it. The heavy is now HELD to completion (the real apply
+                # mechanic), so a short 0.35s tail suffices.
+                self.sleep(0.35)
                 if not c6_performed and self.is_c6():
                     c6_performed = True
                     start = time.time()
@@ -192,28 +207,22 @@ class Iuno(BaseChar):
             self.sleep(0.1 - (time.time() - cycle_start))
 
     def switch_next_char(self, *args, **kwargs):
-        # Fire the special heavy on the way out if its prompt is up and off its
-        # 20s cooldown: its buff must ride the outro to Augusta, and do_everything
-        # can return before the prompt lights (the buff was then never applied).
-        # One frame read when on cooldown, so cheap on every swap.
-        if (self.time_elapsed_accounting_for_freeze(self.last_heavy) > 20
-                and self.task.find_feature("iuno_heavy", box="box_extra_action",
-                                           threshold=0.55)):
-            self.heavy_attack()
-            self.last_heavy = time.time()
-            self.sleep(1.2)  # let the slam's hit register (same settle as do_everything)
-            self.logger.info('Iuno: special heavy fired on switch-out')
-        # Reactive-phase outro hardening: Iuno's outro carries her buffs to Augusta
-        # but only fires at FULL concerto, and do_everything returns as soon as her
-        # special heavy fires -- often short of full. When the scripted rotation is
-        # NOT driving, build the ring the rest of the way with her high-yield
-        # sources (echo/skill/lib via build_concerto), never early-bailing
-        # (mandatory: Augusta must carry her buffs into the burst), then force the
-        # outro. Bounded so it can't stall; below 0.6 con she just swaps and
-        # accumulates for next time.
+        # Order matters: build concerto to FULL first (reactive top-off -- her
+        # outro also needs it), because the special heavy's buff ONLY applies at
+        # 100 concerto. Then, at full, HOLD-fire the heavy if its prompt is up
+        # and off its 20s cooldown, and leave via the forced outro so both the
+        # heavy buff and the outro buffs ride to Augusta.
         from src.combat.VariableRotation import reactive_outro_topoff
         reactive_outro_topoff(self, kwargs, threshold=0.6, aggressive=True,
                               mandatory=True)
+        if (self.is_con_full()
+                and self.time_elapsed_accounting_for_freeze(self.last_heavy) > 20
+                and self.task.find_feature("iuno_heavy", box="box_extra_action",
+                                           threshold=0.55)):
+            self._hold_special_heavy()
+            self.last_heavy = time.time()
+            self.sleep(0.35)
+            self.logger.info('Iuno: special heavy held at full concerto on switch-out')
         return super().switch_next_char(*args, **kwargs)
 
     def on_combat_end(self, chars):
