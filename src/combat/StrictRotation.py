@@ -222,10 +222,12 @@ class StrictRotation:
                 build_concerto(char)
         except _combat_control_exceptions():
             raise  # combat ended / char dead -> let the task loop handle it
-        except Exception:
+        except Exception as e:
             # An unexpected per-beat failure must not pin the rotation on the
             # same beat forever: advance past it, then re-raise so it is visible.
-            logger.exception(f'StrictRotation beat {beat.name} failed; advancing past it')
+            # ok-script's Logger has no .exception(); the re-raise below keeps
+            # the full traceback visible to the task loop.
+            logger.error(f'StrictRotation beat {beat.name} failed; advancing past it: {e!r}')
             self.advance()
             raise
         self.advance()
