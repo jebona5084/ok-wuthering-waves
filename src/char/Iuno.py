@@ -44,13 +44,6 @@ class Iuno(BaseChar):
                 return SwitchPriority.MUST
             if priority == NO:
                 return SwitchPriority.NO
-        # Reactive phase: Iuno CLAIMS ShoreKeeper's con-full outro (user request),
-        # closing the Augusta -> SK -> Iuno -> Augusta triangle. SK's outro also
-        # puts recovery butterflies on the incoming char, which patches Iuno's
-        # mid-air interruption weakness during Lunar Cycle.
-        from src.char.ShoreKeeper import ShoreKeeper
-        if has_intro and isinstance(current_char, ShoreKeeper):
-            return SwitchPriority.MUST
         return super().get_switch_priority(current_char, has_intro, target_low_con)
 
     def perform_beat(self, beat):

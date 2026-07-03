@@ -55,6 +55,14 @@ class Augusta(BaseChar):
                 return SwitchPriority.MUST
             if priority == NO:
                 return SwitchPriority.NO
+        # Reactive phase (user request): Augusta CLAIMS ShoreKeeper's con-full
+        # outro, so SK's amp + recovery butterflies land directly on her for the
+        # burst. Iuno's outro also defaults to Augusta, and SK claims Augusta's
+        # con-full exit -- the cycle is Augusta -> SK -> Augusta with Iuno feeding
+        # in between.
+        from src.char.ShoreKeeper import ShoreKeeper
+        if has_intro and isinstance(current_char, ShoreKeeper):
+            return SwitchPriority.MUST
         return super().get_switch_priority(current_char, has_intro, target_low_con)
 
     def perform_beat(self, beat):
