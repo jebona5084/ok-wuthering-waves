@@ -108,10 +108,14 @@ CON_BRIGHT_RING_FLOOR = 220
 # this fraction of the core disc is bright, the bright mask is meaningless and
 # the frame is untrusted.
 CON_BRIGHT_CORE_FLASH = 0.30
-# WHITEOUT (video 048ca5ff): a bright flash blooms the ring right out of its
-# colour range so almost nothing matches, and the read is garbage-LOW. Bright
-# band + starved element mask -> untrusted, hold the last trusted value.
-CON_WHITEOUT_BRIGHTNESS = 190
+# WHITEOUT / FOREIGN OVERLAY: a bright band with the element mask starved is
+# the reader being blinded, not an empty ring -- the read is garbage-LOW.
+# Covers both a white flash blooming the ring out of its colour range (video
+# 048ca5ff, band ~200+) and the decoy star-ring overlay that hides the gauge
+# (user screenshot 'its not actually full': deep out-of-range gold, band
+# ~150-160). A genuinely EMPTY ring track is DARK (~50-70), well under this
+# floor, so real empties still read 0 trusted.
+CON_WHITEOUT_BRIGHTNESS = 120
 CON_WHITEOUT_MAX_ELEMENT_LIT = 0.20
 # The two full sightings must land on different frames this close together.
 # Read cadence during top-offs is 0.05-0.3s and the engine's almost-full path
@@ -201,21 +205,25 @@ def _con_geometry(h, w):
     return cached
 
 
-def con_ring_profile(cropped, lower, upper):
+def con_ring_profile(cropped, lower, upper, glow_lower=None, glow_upper=None):
     """Pure frame analysis of the concerto ring crop. THE measurement.
 
     Args:
         cropped: BGR crop of the con_full box.
         lower/upper: BGR bounds of the element's ring colour.
+        glow_lower/glow_upper: optional BGR bounds of the element's BLOOMED
+            full-ring rendering (see con_glow_colors) -- unioned into the lit
+            mask exactly like the near-white bright mask.
 
     Returns a dict:
-        lit:          per-sector booleans (element-or-bright density lit)
+        lit:          per-sector booleans (element-or-glow-or-bright density lit)
         total_lit:    fraction of sectors lit
         largest_run:  longest contiguous lit arc, as a fraction (== the
                       geometric concerto fill for a partial ring)
         max_gap:      longest contiguous unlit run, in SECTORS
-        element_lit_total: fraction of sectors lit by the ELEMENT mask alone
-                      (bright excluded) -- the whiteout detector's input
+        element_lit_total: fraction of sectors lit by the element-or-glow masks
+                      (near-white bright excluded) -- the whiteout detector's
+                      input
         pollution:    fraction of element-coloured pixels OUTSIDE the band
                       (0.0 when the element mask is starved: no evidence is
                       not evidence of flooding)
@@ -226,6 +234,11 @@ def con_ring_profile(cropped, lower, upper):
     in_band, core, bins, band_bins, band_per_sector = _con_geometry(h, w)
 
     element = np.all((cropped >= lower) & (cropped <= upper), axis=2)
+    if glow_lower is not None:
+        element_or_glow = element | np.all((cropped >= glow_lower)
+                                           & (cropped <= glow_upper), axis=2)
+    else:
+        element_or_glow = element
     bright = np.all(cropped >= CON_BRIGHT_RING_FLOOR, axis=2)
 
     element_total = int(np.count_nonzero(element))
@@ -235,9 +248,9 @@ def con_ring_profile(cropped, lower, upper):
     core_px = int(np.count_nonzero(core))
     bright_core = (int(np.count_nonzero(bright & core)) / core_px) if core_px else 0.0
 
-    union_band = (element | bright) & in_band
+    union_band = (element_or_glow | bright) & in_band
     lit_per_sector = np.bincount(bins[union_band], minlength=CON_RING_SECTORS)
-    element_per_sector = np.bincount(bins[element & in_band], minlength=CON_RING_SECTORS)
+    element_per_sector = np.bincount(bins[element_or_glow & in_band], minlength=CON_RING_SECTORS)
 
     safe_band = np.maximum(band_per_sector, 1)
     density = lit_per_sector / safe_band
@@ -1332,16 +1345,20 @@ class BaseCombatTask(CombatCheck):
         target_index = self._ensure_ring_index(cropped)
 
         if 0 <= target_index < len(con_colors):
-            candidates = [con_colors[target_index]]
+            candidate_indexes = [target_index]
         else:
             # identity unknown this frame (starved/blurred): read all colours
             # and take the strongest profile; the index caches on the next
             # clean frame.
-            candidates = con_colors
+            candidate_indexes = range(len(con_colors))
         profile = None
-        for color_range in candidates:
-            lower, upper = _color_range_to_bgr_bounds(color_range)
-            p = con_ring_profile(cropped, lower, upper)
+        for i in candidate_indexes:
+            lower, upper = _color_range_to_bgr_bounds(con_colors[i])
+            glow = con_glow_colors[i]
+            glow_lower = glow_upper = None
+            if glow is not None:
+                glow_lower, glow_upper = _color_range_to_bgr_bounds(glow)
+            p = con_ring_profile(cropped, lower, upper, glow_lower, glow_upper)
             if profile is None or (p['total_lit'], -p['pollution']) > \
                     (profile['total_lit'], -profile['pollution']):
                 profile = p
@@ -1440,6 +1457,26 @@ con_colors = [  # 不同角色属性的协奏值能量环的颜色范围列表�
         'g': (65, 105),  # Green range    for havoc
         'b': (145, 175)  # Blue range
     }
+]
+
+# BLOOMED full-ring renderings, parallel to `con_colors` (None = element mask
+# suffices). SK's TRUE full ring (user screenshot: 'sk 100 concerto') renders
+# PALE bloomed gold -- blue channel ~130-200, far above the element range's
+# 90-130 cap yet below the near-white bright floor (220), so it matched
+# NEITHER mask and a genuine full read ~0. The blue FLOOR of this band (110)
+# simultaneously excludes the decoy star-ring state, whose deep saturated
+# gold sits at blue <~80 (user screenshot: 'its not actually full').
+con_glow_colors = [
+    {
+        'r': (190, 255),
+        'g': (180, 250),  # pale bloomed gold for spectro full ring
+        'b': (110, 210)
+    },
+    None,  # electric
+    None,  # fire
+    None,  # ice
+    None,  # wind
+    None,  # havoc
 ]
 
 con_templates = [  # 协奏值能量环的模板名称列表 (对应 `con_colors`)。
