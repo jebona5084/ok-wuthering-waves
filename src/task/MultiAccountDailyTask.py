@@ -144,9 +144,9 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
 
     def do_find_account_drop_down(self) -> Box | None:
         texts = self.ocr()
-        if len(self.find_boxes(texts, account_pattern)) == 1 and len(self.find_boxes(texts, LOGIN_TEXTS)) == 1:
-            drop_down = self.find_boxes(texts, account_pattern)[0]
-            return drop_down
+        accounts = self.find_boxes(texts, account_pattern)
+        if len(accounts) == 1 and len(self.find_boxes(texts, LOGIN_TEXTS)) == 1:
+            return accounts[0]
         return None
 
 

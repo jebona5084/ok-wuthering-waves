@@ -113,17 +113,14 @@ class BaseWWTask(BaseTask):
         if percent < 0.5:
             return None
 
-        if target_text:
-            search_text_box = f.copy(x_offset=f.width * 5.2, width_offset=f.width * 6, height_offset=4.5 * f.height,
-                                     y_offset=-0.8 * f.height, name='search_text_box')
-            text = self.ocr(box=search_text_box, match=target_text)
-            logger.debug(f'found f with text {text}, target_text {target_text}')
-            if text:
-                if text[0].y > search_text_box.y + f.height * 1:
-                    logger.debug(f'found f with text {text} below, target_text {target_text}')
-                    self.scroll_relative(0.5, 0.5, 1)
-                return f
-        else:
+        search_text_box = f.copy(x_offset=f.width * 5.2, width_offset=f.width * 6, height_offset=4.5 * f.height,
+                                 y_offset=-0.8 * f.height, name='search_text_box')
+        text = self.ocr(box=search_text_box, match=target_text)
+        logger.debug(f'found f with text {text}, target_text {target_text}')
+        if text:
+            if text[0].y > search_text_box.y + f.height * 1:
+                logger.debug(f'found f with text {text} below, target_text {target_text}')
+                self.scroll_relative(0.5, 0.5, 1)
             return f
 
     def has_target(self):
@@ -460,7 +457,7 @@ class BaseWWTask(BaseTask):
         return result
 
     def handle_claim_button(self):
-        while self.wait_until(self.has_claim, raise_if_not_found=False, time_out=1.5):
+        if self.wait_until(self.has_claim, raise_if_not_found=False, time_out=1.5):
             self.sleep(0.5)
             self.send_key('esc')
             self.sleep(0.5)
@@ -631,16 +628,17 @@ class BaseWWTask(BaseTask):
                 self.log_info('关闭公告!')
                 return False
             texts = self.ocr(log=self.debug)
+            center = self.box_of_screen(0.3, 0.3, 0.7, 0.7)
 
-            if login := self.find_boxes(texts, boundary=self.box_of_screen(0.3, 0.3, 0.7, 0.7),
+            if login := self.find_boxes(texts, boundary=center,
                                         match=LOGIN_TEXTS):
-                if not self.find_boxes(texts, boundary=self.box_of_screen(0.3, 0.3, 0.7, 0.7), match="+86"):
+                if not self.find_boxes(texts, boundary=center, match="+86"):
                     self.click(login, after_sleep=1)
                     self.log_info('点击登录按钮!')
                 return False
-            if agree := self.find_boxes(texts, boundary=self.box_of_screen(0.3, 0.3, 0.7, 0.7), match="同意"):
+            if agree := self.find_boxes(texts, boundary=center, match="同意"):
                 self.log_debug(f'found agree {agree}')
-                if self.find_boxes(texts, boundary=self.box_of_screen(0.3, 0.3, 0.7, 0.7), match=re.compile("隐私")):
+                if self.find_boxes(texts, boundary=center, match=re.compile("隐私")):
                     self.click(agree, after_sleep=1)
                     self.log_info('点击同意按钮!')
                 return False
@@ -669,10 +667,7 @@ class BaseWWTask(BaseTask):
             0]  # and self.find_one(f'gray_book_button', threshold=0.7, canny_lower=50, canny_higher=150)
 
     def get_angle_between(self, my_angle, angle):
-        if my_angle > angle:
-            to_turn = angle - my_angle
-        else:
-            to_turn = -(my_angle - angle)
+        to_turn = angle - my_angle
         if to_turn > 180:
             to_turn -= 360
         elif to_turn < -180:

@@ -36,10 +36,13 @@ class Hiyuki(BaseChar):
 
         self.switch_next_char()
 
-    def perform_standard(self):
-        timeout = self.time_out
+    def _perform_timeout(self):
         if self.has_intro and self.check_outro() in {'char_linnai'}:
-            timeout = 18.0
+            return 18.0
+        return self.time_out
+
+    def perform_standard(self):
+        timeout = self._perform_timeout()
 
         while self.has_long_action() and self.time_elapsed_accounting_for_freeze(self.last_perform) < timeout:
             self.click_echo(time_out=0)
@@ -63,9 +66,7 @@ class Hiyuki(BaseChar):
 
     def perform_lib(self):
         start = time.time()
-        timeout = self.time_out
-        if self.has_intro and self.check_outro() in {'char_linnai'}:
-            timeout = 18.0
+        timeout = self._perform_timeout()
 
         is_timeout = False
 
@@ -144,6 +145,6 @@ class Hiyuki(BaseChar):
         return True
 
     def get_switch_priority(self, current_char=None, has_intro=False, target_low_con=False):
-        if has_intro and current_char and (current_char.char_name in {'char_linnai'} or current_char.char_name in {'char_lucilla'}):
+        if has_intro and current_char and (current_char.char_name in {'char_linnai', 'char_lucilla'}):
             return SwitchPriority.MUST
         return super().get_switch_priority(current_char, has_intro, target_low_con)

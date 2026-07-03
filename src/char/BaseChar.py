@@ -341,8 +341,6 @@ class BaseChar:
         while True:
             if time.time() - start > the_time_out:
                 self.task.in_liberation = False
-                if the_time_out == 0:
-                    self.alert_skill_failed()
                 break
             elif self.task.in_liberation and time.time() - start > 6:
                 self.task.in_liberation = False
@@ -490,9 +488,8 @@ class BaseChar:
             if not self.echo_available() and (duration == 0 or not clicked):
                 break
             now = time.time()
-            if duration > 0 and start != 0:
-                if now - start > duration:
-                    break
+            if duration > 0 and now - start > duration:
+                break
             if now - last_click > 0.1:
                 if not clicked:
                     self.record_echo_use()
@@ -921,13 +918,13 @@ class BaseChar:
         """
         if not self.has_intro:
             return 'null'
-        time = 0
+        last_switch = 0
         outro = 'null'
         for char in self.task.chars:
             if char is None or char == self:
                 continue
-            if char.last_switch_time > time:
-                time = char.last_switch_time
+            if char.last_switch_time > last_switch:
+                last_switch = char.last_switch_time
                 outro = char.char_name
         self.logger.info(f'erned outro from {outro}')
         return outro
@@ -940,17 +937,16 @@ class BaseChar:
         return result
 
     def switch_other_char(self):
+        from src.task.AutoCombatTask import AutoCombatTask
+        if isinstance(self.task, AutoCombatTask):
+            self.logger.debug('AutoCombatTask, skip switch_other_char')
+            return
         target_index = (self.index + 1) % len(self.task.chars)
         for char in self.task.chars:
             if char and char.is_healer and char.index != self.index:
                 target_index = char.index
                 break
         next_char = str(target_index + 1)
-
-        from src.task.AutoCombatTask import AutoCombatTask
-        if isinstance(self.task, AutoCombatTask):
-            self.logger.debug('AutoCombatTask, skip switch_other_char')
-            return
         self.logger.debug(f'{self.char_name} on_combat_end {self.index} switch next char: {next_char}')
         start = time.time()
         while time.time() - start < 6:

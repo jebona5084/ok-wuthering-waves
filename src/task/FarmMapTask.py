@@ -207,9 +207,9 @@ class FarmMapTask(BigMap):
                     else:
                         continue
                 elif distance == self.last_distance:
-                    logger.info(f'might be stuck, try {[self.stuck_index % 4]}')
-                    self.send_key(self.stuck_keys[self.stuck_index % 4][0],
-                                  down_time=self.stuck_keys[self.stuck_index % 4][1], after_sleep=0.5)
+                    stuck_key, stuck_down_time = self.stuck_keys[self.stuck_index % 4]
+                    logger.info(f'might be stuck, try {stuck_key}')
+                    self.send_key(stuck_key, down_time=stuck_down_time, after_sleep=0.5)
                     self.stuck_index += 1
                     continue
 

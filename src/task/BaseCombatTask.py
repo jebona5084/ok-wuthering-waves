@@ -45,17 +45,15 @@ mismatched_names = {
 class BaseCombatTask(CombatCheck):
     """基础战斗任务类，封装了游戏"鸣潮"中角色自动化操作的通用逻辑。"""
     hot_key_verified = False  # 热键是否已验证
-    con_full_size = None  # 不同角色协奏值充满时的大小记录
     freeze_durations = []  # 记录冻结/卡肉的持续时间
-    if con_full_size is None:
-        con_full_size = Config("_con_full_size", {
-            "0": 0,
-            "1": 0,
-            "2": 0,
-            "3": 0,
-            "4": 0,
-            "5": 0,
-        })
+    con_full_size = Config("_con_full_size", {  # 不同角色协奏值充满时的大小记录
+        "0": 0,
+        "1": 0,
+        "2": 0,
+        "3": 0,
+        "4": 0,
+        "5": 0,
+    })
 
     def __init__(self, *args, **kwargs):
         """初始化战斗任务。
@@ -312,8 +310,7 @@ class BaseCombatTask(CombatCheck):
         logger.error(message)
         if self.wait_feature('revive_confirm_hcenter_vcenter', threshold=0.8, time_out=2):
             self.log_info('raise_not_in_combat char dead')
-            if self.reset_to_false(reason=message):
-                logger.error(f'reset to false failed: {message}')
+            self.reset_to_false(reason=message)
             from src.task.AutoCombatTask import AutoCombatTask
             if not isinstance(self, AutoCombatTask) and self.revive_action():
                 exception_type = CharRevivedException
@@ -321,8 +318,8 @@ class BaseCombatTask(CombatCheck):
             else:
                 exception_type = CharDeadException
                 self.info_set('Revive', 'Failed')
-        elif self.reset_to_false(reason=message):
-            logger.error(f'reset to false failed: {message}')
+        else:
+            self.reset_to_false(reason=message)
         if exception_type is None:
             exception_type = NotInCombatException
         raise exception_type(message)
@@ -836,7 +833,8 @@ class BaseCombatTask(CombatCheck):
         Returns:
             int: 协奏值环的颜色索引。
         """
-        if self.get_current_char().ring_index < 0:
+        current_char = self.get_current_char()
+        if current_char.ring_index < 0:
             box = self.get_con_box()
 
             best_index = 0
@@ -846,10 +844,10 @@ class BaseCombatTask(CombatCheck):
                 if percent > best_percentage:
                     best_percentage = percent
                     best_index = i
-            self.get_current_char().ring_index = best_index
+            current_char.ring_index = best_index
             self.log_debug(
-                f'_ensure_ring_index {self.get_current_char()} to {self.get_current_char().ring_index} {con_templates[best_index]}')
-        return self.get_current_char().ring_index
+                f'_ensure_ring_index {current_char} to {current_char.ring_index} {con_templates[best_index]}')
+        return current_char.ring_index
 
     def get_con_box(self):
         """获取协奏值能量环的UI区域盒子对象。
@@ -887,7 +885,6 @@ class BaseCombatTask(CombatCheck):
                 max_area = int(area)
         if max_is_full:
             percent = 1
-        if max_is_full:
             self.con_full_size[str(target_index)] = max_area
 
         if percent != 1 and self.con_full_size[str(target_index)] > 0:
@@ -902,8 +899,6 @@ class BaseCombatTask(CombatCheck):
 
         box.confidence = percent
         self.draw_boxes(f'is_con_full_{self}', box)
-        if percent > 1:
-            percent = 1
         return percent
 
     def count_rings(self, image, color_range, min_area):

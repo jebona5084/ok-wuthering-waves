@@ -484,7 +484,7 @@ class FarmEchoTask(WWOneTimeTask, BaseCombatTask):
                 template = cv2.warpAffine(original_mat, rotation_matrix, (w, h))
                 boxes = self.find_feature(box=self.box_of_screen(0.3, 0.3, 0.7, 0.7), template=template, threshold=0.7)
                 targets.extend(boxes)
-                box = max(targets, key=lambda box: box.confidence, default=None)
+            box = max(targets, key=lambda box: box.confidence, default=None)
             if box is None:
                 raise Exception(f"boss not found")
         return box

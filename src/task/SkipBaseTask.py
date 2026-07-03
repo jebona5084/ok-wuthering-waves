@@ -77,11 +77,10 @@ class SkipBaseTask(BaseWWTask):
                 self.sleep(0.2)
             elif dots := self.find_feature('btn_dialog_3dots', x=0.59, y=0.33, to_x=0.75, to_y=0.75,
                                            threshold=0.7):
-                if dots:
+                self.sleep(0.2)
+                if not self.try_click_skip():
+                    self.click(dots[0])
+                    logger.info('choose dot')
                     self.sleep(0.2)
-                    if not self.try_click_skip():
-                        self.click(dots[0])
-                        logger.info('choose dot')
-                        self.sleep(0.2)
             return True
 
