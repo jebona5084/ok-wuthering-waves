@@ -15,10 +15,15 @@ class Augusta(BaseChar):
     ENHANCED_SKILL_COUNT = 3
     # The 10-count badge is IUNO'S BUFF on Augusta (climbs 1..10 during her
     # buffed window) -- NOT Majesty. Majesty is a separate resource (2 stacks)
-    # that lights the 2nd-liberation icon (check_majesty / Augusta_lib2). Badge
-    # digit box in 3840x2160 ref px (pinned from an in-game hover at normalized
-    # (0.501, 0.840)); widened left so "10" fits.
-    IUNO_BUFF_BOX = (1886, 1789, 1950, 1839)
+    # that lights the 2nd-liberation icon (check_majesty / Augusta_lib2).
+    # The badge lives in the on-field character's BUFF STRIP above the forte
+    # bar, and that strip RE-FLOWS as buffs come and go -- a fixed 64px patch
+    # cannot track it (user screenshot: ocr found [] while 10 stacks showed;
+    # frame measurement put the icons at ~1740-2020 x 1830-1920 while the old
+    # box sat at 1886-1950 x 1789-1839, above the icons). So the box now
+    # covers the WHOLE strip and the reader takes the largest plausible
+    # stack digit. 3840x2160 ref px.
+    IUNO_BUFF_BOX = (1600, 1800, 2400, 1945)
     IUNO_BUFF_TARGET = 10
     # Augusta's big burst must ride BOTH support buffs. Liveness is now read from
     # the BuffTracker as SECONDS REMAINING (stamped by SK/Iuno at the moment they
@@ -133,9 +138,12 @@ class Augusta(BaseChar):
     def iuno_buff_stacks(self):
         """OCR Iuno's buff-stack badge on Augusta (0 if no digit / can't be read).
 
-        The digit is white on the badge, so isolate white text first (blacks out
-        the icon/fill and leaves the number). At the lowest the badge shows no
-        digit -> reads 0.
+        Scans the WHOLE buff strip (see IUNO_BUFF_BOX: the strip re-flows, a
+        fixed patch misses the badge) and returns the largest digit read that
+        is a plausible stack count (1..IUNO_BUFF_TARGET) -- her badge climbs
+        to 10, the biggest count any strip buff shows. The digit is white, so
+        isolate white text first (blacks out the icon/fill and leaves the
+        number). No digit -> reads 0.
         """
         from src.task.BaseWWTask import isolate_white_text_to_black
         box = self.task.box_of_screen_scaled(
@@ -145,9 +153,11 @@ class Augusta(BaseChar):
         for t in self.task.ocr(box=box, match=re.compile(r'\d+'),
                                frame_processor=isolate_white_text_to_black):
             try:
-                stacks = max(stacks, int(re.sub(r'\D', '', t.name)))
+                value = int(re.sub(r'\D', '', t.name))
             except (ValueError, TypeError):
                 continue
+            if 1 <= value <= self.IUNO_BUFF_TARGET:
+                stacks = max(stacks, value)
         self.logger.debug(f'Augusta iuno_buff_stacks = {stacks}')
         return stacks
 
