@@ -45,12 +45,6 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             self.run_task_by_class(DailyTask)
             self.done_set.add(next_account)
 
-    def _click_center_offset(self, offset_x, offset_y, after_sleep=0.5):
-        h, w = self.frame.shape[:2]
-        rel_x = 0.5 + offset_x / w
-        rel_y = 0.5 + offset_y / h
-        self.click_relative(rel_x, rel_y, after_sleep=after_sleep)
-
     def _switch_to_login(self):
         self.log_info(self.tr('Switching back to login screen'))
         self.send_key('esc', after_sleep=1.5)

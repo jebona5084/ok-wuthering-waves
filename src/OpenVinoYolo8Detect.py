@@ -14,14 +14,12 @@ class OpenVinoYolo8Detect:
     def __init__(self, weights='echo.onnx', model_h=640, model_w=640, iou_thres=0.45):
         self.dic_labels = {0: 'echo'}
         self.weights = weights
-        self.model_size = (model_w, model_h)
         self.iou_threshold = iou_thres
-        self.openfile_name_model = weights
 
         self.core = Core()
 
         try:
-            model = self.core.read_model(model=self.openfile_name_model)
+            model = self.core.read_model(model=self.weights)
 
             device_used = "CPU"
             is_compiled = False

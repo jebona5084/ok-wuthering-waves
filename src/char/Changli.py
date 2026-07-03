@@ -3,7 +3,7 @@ import cv2
 import numpy as np
 
 from ok import color_range_to_bound
-from src.char.BaseChar import BaseChar, SwitchPriority, forte_white_color
+from src.char.BaseChar import BaseChar, SwitchPriority
 
 
 class Changli(BaseChar):

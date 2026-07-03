@@ -6,7 +6,6 @@ class Rebecca(BaseChar):
     NORMAL_ATTACK_DURATION = 0.5
     HEAVY_ATTACK_DURATION = 1.5
     LIB_HOLD_DURATION = 5.2
-    LIB_CD_WAIT = 1.5
     LIB_ENTER_DURATION = 0.8
     DODGE_INTERVAL = 4.0         # 闪避最小间隔（秒）
 

@@ -1,11 +1,9 @@
-import re
 import time
 
 import win32api
 
 from ok import Logger
 from ok import find_color_rectangles
-from src import text_white_color
 from src.Labels import Labels
 from src.char.Roccia import Roccia
 from src.task.BaseWWTask import BaseWWTask
@@ -20,14 +18,9 @@ class CombatCheck(BaseWWTask):
         self._in_combat = False
         self.skip_combat_check = False
         self._in_liberation = False
-        self.has_count_down = False
         self.sleep_check_interval = 0.4
-        self.last_out_of_combat_time = 0
-        self.boss_health_box = None
-        self.boss_health = None
         self.last_break_check_time = 0
         self.out_of_combat_reason = ""
-        self.last_in_realm_not_combat = 0
         self._last_liberation = 0
         self.target_enemy_time_out = 3
         self.switch_char_time_out = 5
@@ -62,11 +55,6 @@ class CombatCheck(BaseWWTask):
         self._in_combat = False
         self.esc_count = 0
         self.in_liberation = False
-        self.has_count_down = False
-        self.last_out_of_combat_time = 0
-        self.boss_health = None
-        self.boss_health_box = None
-        self.last_in_realm_not_combat = 0
         self.has_lavitator = False
         self.can_break = False
         self.scene.set_not_in_combat()
@@ -90,37 +78,6 @@ class CombatCheck(BaseWWTask):
             self.send_key('f', after_sleep=0.1)
             self.can_break = False
 
-    def check_count_down(self):
-        count_down_area = self.box_of_screen_scaled(3840, 2160, 1820, 266, 2100,
-                                                    340, name="check_count_down", hcenter=True)
-        count_down = self.calculate_color_percentage(text_white_color,
-                                                     count_down_area)
-
-        if self.has_count_down:
-            if count_down < 0.03:
-                numbers = self.ocr(box=count_down_area, match=count_down_re)
-                if self.debug:
-                    self.screenshot(f'count_down disappeared {count_down:.2f}%')
-                logger.info(f'count_down disappeared {numbers} {count_down:.2f}%')
-                if not numbers:
-                    self.has_count_down = False
-                    return False
-                else:
-                    return True
-            else:
-                return True
-        else:
-            if count_down > 0.03:
-                numbers = self.ocr(box=count_down_area, match=count_down_re)
-                if numbers:
-                    self.has_count_down = True
-                logger.info(f'set count_down to {self.has_count_down}  {numbers} {count_down:.2f}%')
-            return self.has_count_down
-
-    @property
-    def target_area_box(self):
-        return self.box_of_screen(0.1, 0.10, 0.9, 0.9, hcenter=True, name="target_area_box")
-
     def is_boss(self):
         return self.find_one('boss_break_shield') or self.find_one('boss_break_lock')
 
@@ -138,7 +95,6 @@ class CombatCheck(BaseWWTask):
                 self.log_info('on_combat_check failed')
                 return self.reset_to_false(reason='on_combat_check failed')
             if self.has_target():
-                self.last_in_realm_not_combat = 0
                 return self.scene.set_in_combat()
             if self.combat_end_condition is not None and self.combat_end_condition():
                 return self.reset_to_false(reason='end condition reached')
@@ -222,16 +178,6 @@ class CombatCheck(BaseWWTask):
                     return True
         self.log_debug(f'ensuring leviator succees {levitator}')
         return self.target_enemy()
-
-    def log_time(self, start, name):
-        logger.debug(f'check cost {name} {time.time() - start}')
-        return True
-
-    def ocr_lv_text(self):
-        lvs = self.ocr(box=self.target_area_box,
-                       match=re.compile(r'lv\.\d{1,3}', re.IGNORECASE),
-                       target_height=540, name='lv_text')
-        return lvs
 
     def get_target_names(self):
         has_name = 'has_target'
@@ -332,18 +278,12 @@ class CombatCheck(BaseWWTask):
             boxes = find_color_rectangles(self.frame, boss_health_color, min_width, min_height * 1.3,
                                           box=self.box_of_screen(1269 / 3840, 58 / 2160, 2533 / 3840, 200 / 2160))
             if len(boxes) == 1:
-                self.boss_health_box = boxes[0]
-                self.boss_health_box.width = 10
-                self.boss_health_box.x += 6
-                self.boss_health = self.boss_health_box.crop_frame(self.frame)
                 self.draw_boxes('boss_health', boxes, color='blue')
                 return True
         return False
 
     def check_health_bar(self):
         return self.has_health_bar() or self.is_boss()
-
-count_down_re = re.compile(r'\d\d')
 
 
 target_enemy_color_yellow = {

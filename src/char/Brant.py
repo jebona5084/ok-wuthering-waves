@@ -35,7 +35,6 @@ class Brant(BaseChar):
         if self.is_forte_full() and self.resonance_available():
             self.resonance_forte_full()
             self.perform_anchor = time.time()
-            self.in_liberaction = 0
             return self.switch_next_char()
         if not self.still_in_liberation() and self.echo_available():
             self.click_echo()
@@ -45,7 +44,6 @@ class Brant(BaseChar):
         return self.time_elapsed_accounting_for_freeze(self.last_liberation) < 12
 
     def perform_in_outro(self):
-        click = 0
         start = time.time()
         timeout = 1.5
         liber = False
@@ -60,7 +58,6 @@ class Brant(BaseChar):
                 self.wait_down(4)
                 if liber:
                     break
-                    return True
             if self.liberation_available() and self.click_liberation():
                 start = time.time()
                 timeout = 10
@@ -73,7 +70,6 @@ class Brant(BaseChar):
             elif not self.task.has_lavitator:
                 self.task.jump()
             self.click()
-            click = 1 - click
             self.check_combat()
             self.task.next_frame()
         self.click_echo()

@@ -63,7 +63,7 @@ class Encore(BaseChar):
     def can_resonance_step2(self, delay=2):
         return self.time_elapsed_accounting_for_freeze(self.last_resonance, True) < delay
 
-    def n4(self, duration=2.0):
+    def n4(self):
         duration = 2.7 if self.click_resonance()[0] else 2.4
         if self.time_elapsed_accounting_for_freeze(self.liberation_time) < 6:
             self.logger.debug('encore liberation n4')

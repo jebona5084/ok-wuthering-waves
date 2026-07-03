@@ -3,10 +3,9 @@ import cv2
 import time
 
 from qfluentwidgets import FluentIcon
-import numpy as np
 
-from ok import Logger, TaskDisabledException, color_range_to_bound
-from src.task.BaseCombatTask import BaseCombatTask, white_color
+from ok import Logger, TaskDisabledException
+from src.task.BaseCombatTask import BaseCombatTask
 from src.task.WWOneTimeTask import WWOneTimeTask
 from ok import find_boxes_by_name
 
@@ -68,15 +67,14 @@ class FarmEchoTask(WWOneTimeTask, BaseCombatTask):
         self.last_night_change = 0
         self.aim_boss = None
         self.combat_wait_time = 0
-        self.set_night = False
         self.bypass_end_wait = False
         self._teleport_walk_result = None
         self._just_entered_boss_realm = False
         self.boss_dict = {
             '伪作的神王': {'name': r'伪作的神王'},
-            '异构武装': {'name': r'(异构武装|加尔古耶)', 'set_combat_wait': 5},
-            '荣耀狮像': {'name': r'(狮像|亚狮诺索)', 'set_combat_wait': 5},
-            '罗蕾莱': {'name': r'(罗蕾莱|夜之女皇)', 'set_night': True},
+            '异构武装': {'name': r'(异构武装|加尔古耶)'},
+            '荣耀狮像': {'name': r'(狮像|亚狮诺索)'},
+            '罗蕾莱': {'name': r'(罗蕾莱|夜之女皇)'},
         }
         self.is_revived = False
 
@@ -518,93 +516,6 @@ class FarmEchoTask(WWOneTimeTask, BaseCombatTask):
             self.wait_click_travel()
             self.wait_in_team_and_world(time_out=30)
 
-    def click_boss_octagon(self):
-        # === 1. 读取图像 ===
-        img = self.box_of_screen(0.3, 0.3, 0.7, 0.7).crop_frame(self.frame)
-
-        # === 2. 提取白色部分（白边）===
-        lower_white, upper_white = color_range_to_bound(white_color)
-        mask = cv2.inRange(img, lower_white, upper_white)
-        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((3, 3), np.uint8))
-
-        # 2. 找轮廓
-        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
-        # 3. 生成理想梯形轮廓（用于形状比对）
-        h, w = self.frame.shape[:2]
-
-        # 缩放比例
-        scale_x = w / 2560
-        scale_y = h / 1440
-
-        # 原梯形轮廓
-        trapezoid = np.array([
-            [35, 0], [0, 35], [92, 36], [56, 0]
-        ], np.int32).reshape((-1, 1, 2))
-
-        # 等比例缩放
-        trapezoid_scaled = np.zeros_like(trapezoid, dtype=np.int32)
-        trapezoid_scaled[:, 0, 0] = (trapezoid[:, 0, 0] * scale_x).astype(np.int32)
-        trapezoid_scaled[:, 0, 1] = (trapezoid[:, 0, 1] * scale_y).astype(np.int32)
-
-        # 定义匹配阈值
-        best_match = None
-        best_ratio = 0
-
-        for cnt in contours:
-            cnt = cv2.convexHull(cnt)
-            x, y, _, _ = cv2.boundingRect(cnt)
-            for dx in range(-10, 11, 2):
-                for dy in range(-10, 11, 2):
-                    shifted = trapezoid_scaled + [x + dx, y + dy]
-                    area_i, _ = cv2.intersectConvexConvex(cnt.astype(np.float32), shifted.astype(np.float32))
-                    ratio = area_i / cv2.contourArea(trapezoid_scaled)
-                    if ratio > best_ratio:
-                        best_ratio = ratio
-                        best_match = cnt
-
-        # # 画出匹配到的轮廓
-        # if best_match is not None:
-        #     cv2.polylines(img, [best_match], isClosed=False, color=(0,255,0), thickness=2)
-
-        # if best_mat is not None and len(best_mat) > 0:
-        #     best_mat = best_mat.astype(np.int32)
-        #     cv2.polylines(img, [best_mat], isClosed=False, color=(255,0,0), thickness=2)
-
-        # # 显示结果
-        # print(f'Best match ratio: {best_ratio:.2f}')
-        # cv2.imshow("mask", mask)
-        # cv2.imshow("Matched", img)
-        # cv2.waitKey(1)
-
-        # 点击轮廓中心
-        if best_match is None:
-            raise RuntimeError('Can not find the boss octagon on map')
-
-        x0, y0 = self.width_of_screen(0.3), self.height_of_screen(0.3)
-        x, y, w, h = cv2.boundingRect(best_match)
-        cx = x0 + x + w // 2
-        cy = y0 + y + h // 2
-        self.click(cx, cy, after_sleep=1)
-
-    def teleport_to_octagon_boss(self):
-        """传送到八边形Boss图标。"""
-        self.log_info('click m to open the map')
-        self.send_key('m', after_sleep=2)
-
-        self.click_boss_octagon()
-        travel = self.wait_feature('gray_teleport', raise_if_not_found=True, time_out=3)
-        if not travel:
-            pop_up = self.find_feature('map_way_point', box='map_way_point_pop_up_box')
-            if pop_up:
-                self.click(pop_up, after_sleep=1)
-                travel = self.wait_feature('gray_teleport', raise_if_not_found=True, time_out=3)
-        if not travel:
-            raise RuntimeError(f'Can not find the travel button')
-        self.click_box(travel, relative_x=1.5)
-        self.wait_in_team_and_world(time_out=20)
-        self.sleep(2)
-
     def scroll_and_click_buttons(self):
         self.sleep(0.2)
         start = time.time()
@@ -624,25 +535,7 @@ class FarmEchoTask(WWOneTimeTask, BaseCombatTask):
             self.walk_to_box(self.find_treasure_icon, end_condition=self.find_f_with_text, y_offset=0.1)
             return True
 
-    def choose_level(self, start):
-        y = 0.17
-        x = 0.15
-        distance = 0.08
-
-        logger.info(f'choose level {start}')
-        self.click_relative(x, y + (start - 1) * distance)
-        self.sleep(0.5)
-
-        self.wait_click_feature('gray_button_challenge', raise_if_not_found=True,
-                                click_after_delay=0.5)
-        self.wait_click_feature('gray_confirm_exit_button', relative_x=-1, raise_if_not_found=False,
-                                time_out=3, click_after_delay=0.5, threshold=0.8)
-        self.wait_click_feature('gray_start_battle', relative_x=-1, raise_if_not_found=True,
-                                click_after_delay=0.5, threshold=0.8)
-
     def check_boss_name(self):
-        # self.combat_wait_time = self.config.get("Combat Wait Time", 0)
-        # self.set_night = self.config.get('Change Time to Night')
         if self.game_lang != 'zh_CN':
             return
         texts = self.ocr(box=self.box_of_screen(1269 / 3840, 10 / 2160, 2533 / 3840, 140 / 2160, hcenter=True),
@@ -652,10 +545,6 @@ class FarmEchoTask(WWOneTimeTask, BaseCombatTask):
             fps_text = find_boxes_by_name(texts, re.compile(s, re.IGNORECASE))
             if fps_text:
                 self.aim_boss = key
-                # if value.get('set_combat_wait'):
-                #     self.combat_wait_time = value.get('set_combat_wait')
-                # if value.get('set_night'):
-                #     self.set_night = True
                 break
         if self.aim_boss is not None:
             logger.info(f'combat with {self.aim_boss}')

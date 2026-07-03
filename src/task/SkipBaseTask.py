@@ -85,15 +85,3 @@ class SkipBaseTask(BaseWWTask):
                         self.sleep(0.2)
             return True
 
-
-dialog_white_color = {
-    'r': (230, 255),  # Red range
-    'g': (230, 255),  # Green range
-    'b': (230, 255)  # Blue range
-}
-
-dialog_black_color = {
-    'r': (0, 15),  # Red range
-    'g': (0, 15),  # Green range
-    'b': (0, 15)  # Blue range
-}

@@ -10,10 +10,6 @@ from src.task.BaseWWTask import BaseWWTask
 
 logger = Logger.get_logger(__name__)
 
-number_pattern = re.compile(r"^[\d.%]+$")
-property_pattern = re.compile(r"^\D*$")
-
-
 class ChangeEchoTask(BaseWWTask, FindFeature):
 
     def __init__(self, *args, **kwargs):
@@ -24,7 +20,6 @@ class ChangeEchoTask(BaseWWTask, FindFeature):
         self.group_name = "强化声骸"
         self.group_icon = FluentIcon.ADD
         self.supported_languages = ["zh_CN"]
-        self.fail_reason = ""
         self.add_text_fix(
             {'凝夜自霜': '凝夜白霜', '主属性灭伤害加成': '主属性湮灭伤害加成', "灭伤害加成": "主属性湮灭伤害加成",
              '主属性行射伤害加成': '主属性衍射伤害加成'})

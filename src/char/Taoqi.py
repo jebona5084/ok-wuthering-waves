@@ -9,5 +9,5 @@ class Taoqi(BaseChar):
         else:
             self.click_liberation()
             self.click_resonance()
-            self.click_echo(sleep_time=0.1)
+            self.click_echo()
         self.switch_next_char()

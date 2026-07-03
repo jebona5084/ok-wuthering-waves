@@ -17,7 +17,6 @@ class DiagnosisTask(WWOneTimeTask, BaseCombatTask):
         self.group_icon = FluentIcon.UNIT
         self.description = "Diagnosis Problem, Performance Test, Run in Game World"
         self.name = "Diagnosis"
-        self.start = 0
 
     def run(self):
         super().run()
@@ -26,7 +25,6 @@ class DiagnosisTask(WWOneTimeTask, BaseCombatTask):
             return
         self.load_hotkey(force=True)
 
-        self.start = time.time()
         capture_cost = 0
         ocr_cost = 0
         while True:
@@ -36,7 +34,6 @@ class DiagnosisTask(WWOneTimeTask, BaseCombatTask):
             if not char:
                 self.info.clear()
                 self.info['Current Character'] = "None"
-                self.start = time.time()
             else:
                 start = time.time()
                 self.reset_scene()
@@ -56,19 +53,3 @@ class DiagnosisTask(WWOneTimeTask, BaseCombatTask):
                 self.info['Echo CD'] = self.get_cd('echo')
                 self.info['Liberation CD'] = self.get_cd('liberation')
                 self.info['Concerto'] = char.get_current_con()
-
-    def choose_level(self, start):
-        y = 0.17
-        x = 0.15
-        distance = 0.08
-
-        logger.info(f'choose level {start}')
-        self.click_relative(x, y + (start - 1) * distance)
-        self.sleep(0.5)
-
-        self.wait_click_feature('gray_button_challenge', raise_if_not_found=True,
-                                click_after_delay=0.5)
-        self.wait_click_feature('gray_confirm_exit_button', relative_x=-1, raise_if_not_found=False,
-                                time_out=3, click_after_delay=0.5, threshold=0.8)
-        self.wait_click_feature('gray_start_battle', relative_x=-1, raise_if_not_found=True,
-                                click_after_delay=0.5, threshold=0.8)

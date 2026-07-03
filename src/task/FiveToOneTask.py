@@ -65,10 +65,6 @@ class FiveToOneTask(BaseCombatTask):
             self.merge_set(name_box, set_name, 1)
             self.merge_set(name_box, set_name, 2)
 
-    def ocr_main_stats(self):
-        name_box = self.box_of_screen(0.11, 0.19, 0.87, 0.75)
-        return self.ocr(box=name_box, threshold=0.1)
-
     def merge_set(self, name_box, set_name, step):
         keeps = self.config.get(set_name, [])
         self.log_info(f'keeps: {len(keeps)} set_name: {set_name} keep: {keeps}')

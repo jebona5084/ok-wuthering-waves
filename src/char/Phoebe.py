@@ -21,7 +21,6 @@ class Phoebe(BaseChar):
         self.attribute = 0
         self.star_available = False
         self.char_zani = None
-        self.attribute_mismatch = False
         self.state = {
             "enter_status": 0,
             "starflash_combo": 0,
@@ -349,7 +348,6 @@ class Phoebe(BaseChar):
         if height == 0 or width < 64 or not np.array_equal(np.unique(gray), [0, 255]):
             return 0
 
-        white_ratio = np.count_nonzero(gray == 255) / gray.size
         profile = np.sum(gray == 255, axis=0).astype(np.float32)
         profile -= np.mean(profile)
         n = np.abs(np.fft.fft(profile))
@@ -397,15 +395,6 @@ class Phoebe(BaseChar):
         if self.attribute == 2 and self.char_zani is not None:
             return self.char_zani.get_state()
 
-    def is_action_complete(self):
-        if self.attribute != 2:
-            return False
-        self.logger.debug(
-            f'state_liberation {self.state["liberation"]} state_starflash_combo {self.state["starflash_combo"]}')
-        if self.state["liberation"] >= 1 and self.state["starflash_combo"] >= 2:
-            return True
-        return False
-
     def reset_action(self):
         if self.attribute == 2:
             self.logger.info(f'reset action')
@@ -443,12 +432,6 @@ phoebe_blue_color = {
     'r': (124, 134),  # Red range
     'g': (176, 186),  # Green range
     'b': (250, 255)  # Blue range
-}
-
-phoebe_light_color = {
-    'r': (250, 255),  # Red range
-    'g': (250, 255),  # Green range
-    'b': (175, 185)  # Blue range
 }
 
 phoebe_forte_light_color = {

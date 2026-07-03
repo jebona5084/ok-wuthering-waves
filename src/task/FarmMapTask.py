@@ -56,18 +56,6 @@ class BigMap(WWOneTimeTask, BaseCombatTask):
         if wait_world:
             self.wait_in_team_and_world()
 
-    def find_closest(self, my_box):
-        min_distance = 100000
-        min_star = None
-        if len(self.stars) == 0:
-            return None, 0, 0
-        for star in self.stars:
-            distance = star.center_distance(my_box)
-            if distance < min_distance:
-                min_distance = distance
-                min_star = star
-        return min_star
-
     def find_direction_angle(self, screenshot=False):
         if len(self.stars) == 0:
             return None, 0, 0
@@ -239,13 +227,6 @@ class FarmMapTask(BigMap):
             self._stop_movement(current_direction)
 
 
-star_color = {
-    'r': (190, 220),  # Red range
-    'g': (190, 220),  # Green range
-    'b': (190, 220)  # Blue range
-}
-
-
 def sort_stars(points, start_point, max_distance=0):
     """
     BUILDS A PATH using Nearest Neighbor heuristic starting from 'start_point'.
@@ -275,13 +256,3 @@ def sort_stars(points, start_point, max_distance=0):
         current_point = next_point  # Update the current point for the next iteration
     return path_result
 
-
-def mask_star(image):
-    # return image
-    return create_color_mask(image, star_color)
-
-
-def create_color_mask(image, color_ranges):
-    mask = cv2.inRange(image, (color_ranges['b'][0], color_ranges['g'][0], color_ranges['r'][0]),
-                       (color_ranges['b'][1], color_ranges['g'][1], color_ranges['r'][1]))
-    return mask

@@ -11,7 +11,6 @@ class Jinhsi(BaseChar):
         self.has_free_intro = False
         self.incarnation = False
         self.incarnation_cd = False
-        self.last_fly_e_time = 0
 
     def do_perform(self):
         if self.incarnation:
@@ -99,7 +98,6 @@ class Jinhsi(BaseChar):
             self.task.next_frame()
             self.check_combat()
 
-        self.last_fly_e_time = start
         if self.click_liberation(send_click=True):
             self.continues_normal_attack(0.3)
         else:
@@ -108,7 +106,3 @@ class Jinhsi(BaseChar):
         self.logger.info(f'handle_intro end {time.time() - start}')
         self.incarnation = True
         self.incarnation_cd = False
-
-    def wait_resonance(self):
-        while not self.resonance_available():
-            self.send_resonance_key(interval=0.1)

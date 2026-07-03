@@ -60,9 +60,9 @@ class TestChar(TaskTestCase):
         self.assertEqual(char_dict[Labels.char_lucy]['char_type'], CharType.MAIN_DPS)
         self.assertEqual(char_dict[Labels.char_rebecca]['cls'], Rebecca)
         self.assertEqual(char_dict[Labels.char_rebecca]['char_type'], CharType.SUB_DPS)
-        self.assertEqual(_get_char_type(task, char_dict[Labels.char_iuno]), CharType.SUB_DPS)
-        self.assertEqual(_get_buff_time(task, char_dict[Labels.char_iuno]), get_default_buff_time(CharType.SUB_DPS))
-        self.assertEqual(_get_buff_time(task, dict(char_dict[Labels.char_mortefi], buff_time=12)), 12)
+        self.assertEqual(_get_char_type(char_dict[Labels.char_iuno]), CharType.SUB_DPS)
+        self.assertEqual(_get_buff_time(char_dict[Labels.char_iuno]), get_default_buff_time(CharType.SUB_DPS))
+        self.assertEqual(_get_buff_time(dict(char_dict[Labels.char_mortefi], buff_time=12)), 12)
 
         chisa = Chisa(task, 0, char_type=char_dict[Labels.char_chisa]['char_type'],
                       buff_time=char_dict[Labels.char_chisa]['buff_time'])

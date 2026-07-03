@@ -12,7 +12,6 @@ class Globals(QObject):
     def __init__(self, exit_event):
         super().__init__()
         self._yolo_model = None
-        self.mini_map_arrow = None
         self.logged_in = False
 
     @property
@@ -34,6 +33,3 @@ class Globals(QObject):
     def yolo_detect(self, image, threshold=0.6, label=-1):
         return self.yolo_model.detect(image, threshold=threshold, label=label)
 
-
-if __name__ == "__main__":
-    glbs = Globals(exit_event=None)

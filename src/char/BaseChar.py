@@ -33,9 +33,6 @@ class Elements(IntEnum):
     HAVOC = 5
 
 
-Role = CharType
-role_values = [role for role in CharType]  # 角色定位枚举值的列表
-
 DEFAULT_BUFF_TIME_BY_TYPE = {
     CharType.MAIN_DPS: 0,
     CharType.SUB_DPS: 14,
@@ -70,9 +67,7 @@ class BaseChar:
             index (int): 角色在队伍中的索引 (0, 1, 2)。
             char_name (str, optional): 角色名称。默认为 None。
         """
-        self.white_off_threshold = 0.01
         self.task = task
-        self.sleep_adjust = 0
         self.char_name = char_name
         self.index = index
         self.ring_index = ring_index  # for con check
@@ -87,7 +82,6 @@ class BaseChar:
         self._liberation_available = False
         self._resonance_available = False
         self._echo_available = False
-        self.full_ring_area = 0
         self.last_perform = 0
         self.current_con = 0
         self.has_tool_box = False
@@ -102,8 +96,6 @@ class BaseChar:
         self.logger = Logger.get_logger(self.name)
         self.check_f_on_switch = True
         self.cycle_start_time = 0.0
-        self.cycle_time_out = 1.1
-        self.cycle_intro_time = 1.2
         self.target_box_short_combat_check = False
 
     def set_char_type(self, char_type=CharType.MAIN_DPS):
@@ -150,30 +142,12 @@ class BaseChar:
         return self.buff_time > 0 and self.last_buff_time > 0 and (
                 self.time_elapsed_accounting_for_freeze(self.last_buff_time) < self.buff_time)
 
-    def cycle(self):
-        self.cycle_start()
-        while self.time_elapsed_accounting_for_freeze(
-                self.cycle_start_time) < self.cycle_time_out + self.cycle_intro_time:
-            if self.do_cycle():
-                self.cycle_sleep()
-                continue
-            else:
-                break
-        self.switch_next_char()
-
-    def do_cycle(self):
-        return
-
     def cycle_start(self):
         self.cycle_start_time = time.time()
 
     def cycle_sleep(self, duration=0.1):
         to_sleep = duration - (time.time() - self.cycle_start_time)
         self.sleep(to_sleep)
-
-    def flying_based_on_resonance(self):
-        if not self.has_cd('resonance') and not self.task.box_highlighted('resonance'):
-            return True
 
     def skip_combat_check(self):
         """是否在某些操作中跳过战斗状态检查。
@@ -289,18 +263,6 @@ class BaseChar:
             bool: 如果在冷却则返回 True。
         """
         return self.task.has_cd(box_name)
-
-    def is_available(self, percent, box_name):
-        """判断技能是否可用 (基于UI百分比和冷却状态)。
-
-        Args:
-            percent (float): 技能UI白色像素百分比。
-            box_name (str): 技能UI区域名称。
-
-        Returns:
-            bool: 如果可用则返回 True。
-        """
-        return percent == 0 or not self.has_cd(box_name)
 
     def switch_out(self, con_full=False):
         """角色被切换下场时的状态更新。"""
@@ -706,17 +668,6 @@ class BaseChar:
         """
         return self.available('echo', check_color=False)
 
-    def extra_action_available(self):
-        """判断最左边的额外技能是否可用。
-
-        Args:
-            current (float, optional): 可选的, 当前声骸技能UI白色像素百分比。默认为 None。
-
-        Returns:
-            bool: 如果可用则返回 True。
-        """
-        return self.available('extra_action', check_color=True, check_cd=False)
-
     def is_con_full(self):
         if self.current_con == 1:
             return True
@@ -792,12 +743,6 @@ class BaseChar:
                 self.logger.info(f'In lock with {char}')
                 return True
         return False
-
-    def wait_switch_cd(self):
-        since_last_switch = self.time_elapsed_accounting_for_freeze(self.last_perform)
-        if since_last_switch <= 1:
-            self.logger.debug(f'wait_switch_cd {since_last_switch}')
-            self.continues_normal_attack(1 - since_last_switch)
 
     def continues_normal_attack(self, duration, interval=0.1, after_sleep=0, click_resonance_if_ready_and_return=False,
                                 until_con_full=False):
@@ -915,10 +860,6 @@ class BaseChar:
             self.logger.info(f'first engage')
         return result
 
-    def wait_switch(self):
-        """检查是否要暂缓切人。"""
-        return False
-
     def switch_other_char(self):
         target_index = (self.index + 1) % len(self.task.chars)
         for char in self.task.chars:
@@ -973,10 +914,4 @@ forte_white_color = {  # 用于检测共鸣回路UI元素可用状态的白色�
     'r': (244, 255),  # Red range
     'g': (246, 255),  # Green range
     'b': (250, 255)  # Blue range
-}
-
-dot_color = {  # 用于检测技能冷却CD提示点 (通常在技能图标下方) 的颜色范围。
-    'r': (195, 255),  # Red range
-    'g': (195, 255),  # Green range
-    'b': (195, 255)  # Blue range
 }

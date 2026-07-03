@@ -137,39 +137,3 @@ class HavocRover(BaseChar):
         res = self.click_resonance(send_click=True)[0]
         if not (liber or res):
             self.continues_normal_attack(1)
-
-    def do_fast_perform(self):
-        self.init()
-        if not self.has_intro:
-            self.sleep(0.01)
-        if self.ring_index == Elements.WIND:
-            self.fast_perform_wind_routine()
-        else:
-            self.do_perform()
-            return
-        self.switch_next_char()
-
-    def fast_perform_wind_routine(self):
-        if self.has_intro:
-            if self.wind_routine_click_while_flying(0.5):
-                return
-        if self.wind_routine_flying():
-            self.click_liberation(send_click=True)
-            self.wind_routine_wait_down(check_forte_full=False)
-            self.sleep(0.03)
-        if self.is_forte_full():
-            self.send_resonance_key()
-            return
-        self.click_echo(time_out=0)
-        if self.resonance_available() and not self.wind_routine_flying():
-            self.send_resonance_key()
-            self.sleep(0.1)
-        att_time = 1 - (time.time() - self.last_perform)
-        if att_time > 0 and self.wind_routine_flying():
-            self.wind_routine_click_while_flying(att_time)
-        if self.use_skyfall_severance:
-            self.click_resonance(send_click=False)
-        if self.click_liberation(send_click=True):
-            self.sleep(0.03)
-        if self.is_forte_full():
-            self.send_resonance_key()

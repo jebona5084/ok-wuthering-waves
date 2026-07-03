@@ -9,13 +9,11 @@ class WWScene(BaseScene):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._in_team = None
-        self._echo_enhance_btn = None
         self._in_combat = None
         self.cd_refreshed = False
 
     def reset(self):
         self._in_team = None
-        self._echo_enhance_btn = None
         self._in_combat = None
         self.cd_refreshed = False
 
@@ -34,8 +32,3 @@ class WWScene(BaseScene):
         if self._in_team is None:
             self._in_team = fun()
         return self._in_team
-
-    def echo_enhance_btn(self, fun):
-        if self._echo_enhance_btn is None:
-            self._echo_enhance_btn = fun()
-        return self._echo_enhance_btn

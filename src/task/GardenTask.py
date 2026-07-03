@@ -27,7 +27,6 @@ class GardenTask(WWOneTimeTask, BaseWWTask):
         ]
         self.garden_priority_features = [
             "garden_get_skip",
-            "garden_not_interested_confirm",
         ]
 
     def run(self):

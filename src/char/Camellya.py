@@ -10,7 +10,6 @@ class Camellya(BaseChar):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.last_heavy = 0
         self.waiting_for_forte_drop = False
         self.forte_drop_timestamp = 0
         self.forte_diff_buffer = []
@@ -24,14 +23,6 @@ class Camellya(BaseChar):
         if has_intro:
             return SwitchPriority.MUST
         return super().get_switch_priority(current_char, has_intro, target_low_con)
-
-    def wait_resonance_not_gray(self, timeout=5):
-        start = time.time()
-        while self.current_resonance() == 0:
-            self.click()
-            self.sleep(0.1)
-            if time.time() - start > timeout:
-                self.logger.error('wait wait_resonance_not_gray timed out')
 
     def on_combat_end(self, chars):
         self.switch_other_char()

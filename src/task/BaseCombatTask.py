@@ -10,7 +10,7 @@ from ok import color_range_to_bound
 from ok import safe_get
 from src import text_white_color
 from src.char import BaseChar
-from src.char.BaseChar import SwitchPriority, dot_color  # noqa
+from src.char.BaseChar import SwitchPriority
 from src.char.CharFactory import get_char_by_pos
 from src.combat.CombatCheck import CombatCheck
 from src.task.BaseWWTask import isolate_white_text_to_black, binarize_for_matching
@@ -67,7 +67,6 @@ class BaseCombatTask(CombatCheck):
         super().__init__(*args, **kwargs)
         self.chars = [None, None, None]  # 角色列表
         self.char_texts = ['char_1_text', 'char_2_text', 'char_3_text']  # 角色文本标识符列表
-        self.mouse_pos = None  # 当前鼠标位置
         self.combat_start = 0  # 战斗开始时间戳
         self.add_text_fix({'Ｅ': 'e'})
         self.use_liberation = True
@@ -408,10 +407,10 @@ class BaseCombatTask(CombatCheck):
             return None
         return min(chars, key=lambda char: (char.last_switch_in_time, char.index))
 
-    def _switch_rule_3_target(self, candidates, allow_healer=True):
+    def _switch_rule_3_target(self, candidates):
         healers_without_buff = [
             char for char in candidates
-            if allow_healer and char.is_healer and char.buff_time > 0 and not char.has_buff()
+            if char.is_healer and char.buff_time > 0 and not char.has_buff()
         ]
         if healers_without_buff:
             return self._oldest_switch_target(healers_without_buff)
@@ -674,14 +673,6 @@ class BaseCombatTask(CombatCheck):
         """
         return self.key_config['Resonance Key']
 
-    def has_resonance_cd(self):
-        """检查共鸣技能是否在冷却中。
-
-        Returns:
-            bool: 如果在冷却中则返回 True, 否则 False。
-        """
-        return self.has_cd('resonance')
-
     def has_cd(self, box_name, char_index=None):
         """检查指定UI区域是否处于冷却状态 (通过检测特定颜色的点和数字)。
 
@@ -831,44 +822,6 @@ class BaseCombatTask(CombatCheck):
     @staticmethod
     def _char_identity(chars):
         return tuple((char.char_name, char.name) if char is not None else None for char in chars)
-
-    @staticmethod
-    def should_update(the_char, old_char):
-        """判断是否应该更新角色对象 (例如, 识别到新角色或角色类型变化)。
-
-        Args:
-            the_char (BaseChar): 新的角色对象。
-            old_char (BaseChar): 旧的角色对象。
-
-        Returns:
-            bool: 如果需要更新则返回 True, 否则 False。
-        """
-        return (type(the_char) is BaseChar and old_char is None) or (
-                type(the_char) is not BaseChar and old_char != the_char)
-
-    def box_resonance(self):
-        """获取共鸣技能冷却UI区域的盒子对象。
-
-        Returns:
-            Box: 盒子对象。
-        """
-        return self.get_box_by_name('box_resonance_cd')
-
-    def get_resonance_cd_percentage(self):
-        """获取共鸣技能冷却UI区域白色像素百分比。
-
-        Returns:
-            float: 白色像素百分比。
-        """
-        return self.calculate_color_percentage(white_color, self.get_box_by_name('box_resonance_cd'))
-
-    def get_resonance_percentage(self):
-        """获取共鸣技能UI区域可用状态的白色像素百分比。
-
-        Returns:
-            float: 白色像素百分比。
-        """
-        return self.calculate_color_percentage(white_color, self.get_box_by_name('box_resonance'))
 
     def is_con_full(self):
         """检查当前角色的协奏值是否已满。
@@ -1057,12 +1010,6 @@ class BaseCombatTask(CombatCheck):
                     # self.screenshot('liberation_available_{}_{}_{}'.format(char, match.name, match.confidence))
 
 
-white_color = {  # 用于检测UI元素可用状态的白色颜色范围。
-    'r': (253, 255),  # Red range
-    'g': (253, 255),  # Green range
-    'b': (253, 255)  # Blue range
-}
-
 wheel_mouse_yellow = {  # 工具轮盘提示中鼠标中键图标的黄色高亮。
     'r': (200, 255),
     'g': (150, 230),
@@ -1119,16 +1066,6 @@ lib_ready_templates = [  # 头像右边大招可用对号
     'lib_ready_wind',  # 1
     'lib_ready_havoc',  # 3
 ]
-
-con_full_templates = [  # 头像右边表示当前角色 协奏满
-    'con_full_spectro',  # 3
-    'con_full_electric',  # 3
-    'con_full_fire',  # 2
-    'con_full_ice',  # 2
-    'con_full_wind',  # 1
-    'con_full_havoc',  # 3
-]
-
 
 def convert_cd(text):
     """

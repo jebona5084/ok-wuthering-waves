@@ -138,27 +138,27 @@ for keys, value in _char_dict_raw.items():
 char_names = char_dict.keys()
 
 
-def _get_char_type(task, info):
+def _get_char_type(info):
     return info.get('char_type', CharType.MAIN_DPS)
 
 
-def _get_buff_time(task, info):
-    char_type = _get_char_type(task, info)
+def _get_buff_time(info):
+    char_type = _get_char_type(info)
     return info.get('buff_time', get_default_buff_time(char_type))
 
 
-def _apply_char_config(task, char, info):
+def _apply_char_config(char, info):
     if char and info:
-        char.set_char_type(_get_char_type(task, info))
-        char.set_buff_time(_get_buff_time(task, info))
+        char.set_char_type(_get_char_type(info))
+        char.set_buff_time(_get_buff_time(info))
         char.target_box_short_combat_check = info.get('target_box_short_combat_check', False)
     return char
 
 
 def _new_char(task, index, cls, char_name, confidence, info):
     return cls(task, index, char_name=char_name, confidence=confidence,
-               ring_index=info.get('ring_index', -1), char_type=_get_char_type(task, info),
-               buff_time=_get_buff_time(task, info))
+               ring_index=info.get('ring_index', -1), char_type=_get_char_type(info),
+               buff_time=_get_buff_time(info))
 
 
 def get_char_by_pos(task, box, index, old_char):
@@ -169,7 +169,7 @@ def get_char_by_pos(task, box, index, old_char):
             cls = load_custom_char_class(info.get('cls'))
             if type(old_char) is not cls:
                 return _new_char(task, index, cls, old_char.char_name, char.confidence, info)
-            _apply_char_config(task, old_char, info)
+            _apply_char_config(old_char, info)
             return old_char
     char = task.find_best_match_in_box(box, char_names, threshold=0.6)
     if char:

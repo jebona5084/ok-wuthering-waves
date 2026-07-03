@@ -1,12 +1,9 @@
 import time
 
-from src.char.BaseChar import BaseChar
+from src.char.BaseChar import BaseChar, forte_white_color
 
 
 class Xigelika(BaseChar):
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
 
     def do_perform(self):
         if self.has_intro:
@@ -82,9 +79,3 @@ class Xigelika(BaseChar):
         self.logger.debug(f'sigrika find forte {white_percent}')
         self.task.draw_boxes('forte_full', box)
         return white_percent > 0.1
-        
-forte_white_color = {  # 用于检测共鸣回路UI元素可用状态的白色颜色范围。
-    'r': (244, 255),  # Red range
-    'g': (246, 255),  # Green range
-    'b': (250, 255)  # Blue range
-}

@@ -153,7 +153,7 @@ class Zhezhi(BaseChar):
         self.logger.info(f'Frequncy analysis with forte {forte}')
         return forte
 
-    def resonance_available(self, current=None, check_ready=False, check_cd=False):
+    def resonance_available(self):
         if self.is_current_char and self.resonance_blue():
             return True
         return super().resonance_available()
@@ -164,9 +164,3 @@ zhezhi_forte_color = {
     'g': (240, 255),  # Green range
     'b': (235, 255)  # Blue range
 }  # 198,255,249
-
-zhezhi_blue_color = {
-    'r': (160, 180),  # Red range
-    'g': (240, 255),  # Green range
-    'b': (245, 255)  # Blue range
-}

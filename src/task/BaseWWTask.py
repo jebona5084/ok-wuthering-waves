@@ -21,11 +21,7 @@ f_white_color = {
     'g': (235, 255),  # Green range
     'b': (235, 255)  # Blue range
 }
-processed_feature = False
-
-
 class BaseWWTask(BaseTask):
-    map_zoomed = False
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -54,15 +50,6 @@ class BaseWWTask(BaseTask):
             return True
         return False
 
-    def zoom_map(self, esc=True):
-        if not self.map_zoomed:
-            self.log_info('zoom map to max')
-            self.map_zoomed = True
-            self.send_key('m', after_sleep=1)
-            self.click_relative(0.94, 0.33, after_sleep=0.5)
-            if esc:
-                self.send_key('esc', after_sleep=1)
-
     def validate(self, key, value):
         message = self.validate_config(key, value)
         if message:
@@ -70,20 +57,9 @@ class BaseWWTask(BaseTask):
         else:
             return True, None
 
-    def absorb_echo_text(self, ignore_config=False):
+    def absorb_echo_text(self):
         if self.game_lang == 'zh_CN' or self.game_lang == 'en_US' or self.game_lang == 'zh_TW':
             return re.compile(r'(吸收|Absorb)')
-        else:
-            return None
-
-    @property
-    def absorb_echo_feature(self):
-        return self.get_feature_by_lang('absorb')
-
-    def get_feature_by_lang(self, feature):
-        lang_feature = feature + '_' + self.game_lang
-        if self.feature_exists(lang_feature):
-            return lang_feature
         else:
             return None
 
@@ -304,34 +280,6 @@ class BaseWWTask(BaseTask):
         else:
             return 'w'
 
-    def get_direction(self, location_x, location_y, screen_width, screen_height, centered, current_direction):
-        """
-        Determines the direction ('w', 'a', 's', 'd') closest to the screen center.
-        Args:
-            location_x: The x-coordinate of the point.
-            location_y: The y-coordinate of the point.
-            screen_width: The width of the screen.
-            screen_height: The height of the screen.
-        Returns:
-            A string "w", "a", "s", or "d".
-        """
-        if screen_width <= 0 or screen_height <= 0:
-            # Handle invalid dimensions, default based on horizontal position
-            return "a" if location_x < screen_width / 2 else "d"
-        center_x = screen_width / 2
-        center_y = screen_height / 2
-        # Calculate vector from point towards the center
-        delta_x = center_x - location_x
-        delta_y = center_y - location_y
-        # Determine dominant direction based on vector magnitude
-        if (abs(delta_x) > abs(delta_y) or (not current_direction and abs(delta_x) > 0.05 * screen_height)
-                or abs(delta_x) > 0.15 * screen_height):
-            # More horizontal movement needed
-            return "a" if delta_x > 0 else "d"
-
-            # More vertical movement needed (or equal)
-        return "w" if delta_y > 0 else "s"
-
     def find_treasure_icon(self):
         return self.find_one('treasure_icon', box=self.box_of_screen(0.03, 0.1, 0.97, 0.81), threshold=0.8,
                              target_height=720)
@@ -504,9 +452,6 @@ class BaseWWTask(BaseTask):
             raise Exception('wait condition failed while walking')
         return result
 
-    def is_moving(self):
-        return False
-
     def handle_claim_button(self):
         while self.wait_until(self.has_claim, raise_if_not_found=False, time_out=1.5):
             self.sleep(0.5)
@@ -515,23 +460,9 @@ class BaseWWTask(BaseTask):
             logger.info(f"handle_claim_button found a claim reward")
             return True
 
-    def handle_claim_button_now(self):
-        if self.has_claim():
-            self.sleep(0.5)
-            self.send_key('esc')
-            self.sleep(0.2)
-            logger.info(f"handle_claim_button_now found a claim reward")
-            return True
-
     def has_claim(self):
         return not self.in_team()[0] and self.find_one('claim_cancel_button_hcenter_vcenter', horizontal_variance=0.05,
                                                        vertical_variance=0.1, threshold=0.8)
-
-    def test_absorb(self):
-        # self.set_image('tests/images/absorb.png')
-        image = cv2.imread('tests/images/absorb.png')
-        result = self.executor.ocr_lib(image, use_det=True, use_cls=False, use_rec=True)
-        self.logger.info(f'ocr_result {result}')
 
     def find_echos(self, threshold=0.3):
         """
@@ -551,22 +482,6 @@ class BaseWWTask(BaseTask):
             box.y += box.height * 1 / 3
             box.height = 1
         self.draw_boxes("echo", ret)
-        return ret
-
-    def yolo_find_all(self, threshold=0.3):
-        """
-        Main function to load ONNX model, perform inference, draw bounding boxes, and display the output image.
-
-        Args:
-            onnx_model (str): Path to the ONNX model.
-            input_image (ndarray): Path to the input image.
-
-        Returns:
-            list: List of dictionaries containing detection information such as class_id, class_name, confidence, etc.
-        """
-        # Load the ONNX model
-        boxes = og.my_app.yolo_detect(self.frame, threshold=threshold, label=-1)
-        ret = sorted(boxes, key=lambda detection: detection.confidence, reverse=True)
         return ret
 
     def pick_echo(self):
@@ -1025,15 +940,6 @@ class BaseWWTask(BaseTask):
         # if self.debug:
         #     self.screenshot(feature)
         return gray_book_boss
-
-    def check_main(self):
-        if not self.in_team()[0]:
-            self.click_relative(0, 0)
-            self.send_key('esc')
-            self.sleep(1)
-            if not self.in_team()[0]:
-                raise Exception('must be in game world and in teams')
-        return True
 
     def _find_book_scroll_top(self):
         box = self.box_of_screen(0.969, 0.191, 0.978, 0.271, name="bar")

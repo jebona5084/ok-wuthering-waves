@@ -23,11 +23,7 @@ class OnnxYolo8Detect:  # Renamed class
         # These will be the target dimensions for the letterbox function.
         self.preprocess_target_h = model_h
         self.preprocess_target_w = model_w
-        # self.model_size was in original code, kept for structural similarity if it was used elsewhere.
-        # It stored (width, height).
-        self.model_size = (model_w, model_h)
         self.iou_threshold = iou_thres
-        # self.openfile_name_model = weights # Redundant with self.weights
 
         # --- ONNX Runtime Initialization ---
         options = ort.SessionOptions()

@@ -14,7 +14,6 @@ class Aemeath(BaseChar):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.should_wait = False
-        self.intro_time = -1
         self.last_liber = -1
         self.last_enhance_e = -1
         self.intro_liberation_time = -1
@@ -63,9 +62,6 @@ class Aemeath(BaseChar):
 
     def can_cast_lib1(self):
         return self.liberation_cooldown_left() <= 0 and self.lib1_unlocked()
-
-    def can_cast_liberation(self):
-        return self.can_cast_lib1()
 
     def lib2_available(self):
         return bool(self.task.find_one('aemeath_lib2', threshold=0.7))
@@ -216,20 +212,15 @@ class Aemeath(BaseChar):
             self._execute_lib1_or_fallback_guard()
 
     def do_perform(self):
-        self.intro_time = -1
         self.should_wait = False
         # 重置本轮计数
         self._lib1_cast_count = 0
         self._lib2_cast_count = 0
-        
+
         if self.has_intro:
             self.record_intro_liberation()
             self.continues_normal_attack(1.2)
-            if self.check_outro() in {'char_linnai', 'char_lupa'}:
-                self.intro_time = 14
-            if self.check_outro() in {'chang_changli', 'char_changli2'}:
-                self.intro_time = 10
-                
+
         self.perform_everything()
 
         # 处理回合末尾的技能链（lib1 -> lib2）的完整性约束
@@ -249,10 +240,6 @@ class Aemeath(BaseChar):
         if is_lib2:
             self._execute_post_lib2_combo()
         return True
-
-    def continue_in_intro(self):
-        return self.time_elapsed_accounting_for_freeze(self.last_liber) < 30 and \
-            self.time_elapsed_accounting_for_freeze(self.last_perform) < self.intro_time
 
     def perform_everything(self):
         start = time.time()
@@ -291,10 +278,6 @@ class Aemeath(BaseChar):
             else:
                 self.click()
             self.cycle_sleep()
-
-    def lib_cd_eminent(self):
-        cd = self.task.get_cd('liberation')
-        return self.lib1_unlocked() and (0 < cd < 1.5 or self.liberation_available())
 
     def enhance_e_available(self):
         return self.task.find_one('aemeath_e1', threshold=0.7) or self.task.find_one('aemeath_e2',

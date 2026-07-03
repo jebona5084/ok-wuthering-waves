@@ -4,8 +4,6 @@ import cv2
 import numpy as np
 
 from qfluentwidgets import FluentIcon
-from decimal import Decimal, ROUND_DOWN, ROUND_UP
-from ok import color_range_to_bound
 from ok import Logger, TaskDisabledException
 from ok import find_boxes_by_name
 from src import text_white_color
@@ -28,8 +26,6 @@ class AutoRogueTask(WWOneTimeTask, BaseCombatTask):
         self.supported_languages = ["zh_CN"]
         self.description = "Enable half-auto combat in weekly rougue, language needs Chinese"
         self.icon = FluentIcon.CALORIES
-        self.last_is_click = False
-        self._in_realm = False
         self.skip_f = 0
         self.status = -1
         self.stamina = 2
@@ -145,7 +141,6 @@ class AutoRogueTask(WWOneTimeTask, BaseCombatTask):
             if self.check_text(0.23, 0.3, 0.30, 0.35, r'领取奖励', 'treasure_text'):
                 self.log_info('collect treasure')
                 if self.stamina > 0:
-                    self.stamina_enough = False
                     if self.stamina == 2:
                         self.click_relative(0.68, 0.63)
                     else:
@@ -302,13 +297,6 @@ class AutoRogueTask(WWOneTimeTask, BaseCombatTask):
         self.last_purple_icon = target
         return target
 
-    def find_buff_select(self):
-        texts = self.ocr(box=self.box_of_screen(0.02, 0.04, 0.12, 0.09, hcenter=True), name='boss_lv_text')
-        fps_text = find_boxes_by_name(texts,
-                                      re.compile(r'隐喻获得', re.IGNORECASE))
-        if fps_text:
-            return True
-
     def buff_selector(self):
         texts = self.ocr(box=self.box_of_screen(0.19, 0.55, 0.81, 0.59, hcenter=True), name='buffs_text')
         buffs = find_boxes_by_name(texts, re.compile(r'[\u4e00-\u9fffA-Za-z]+'))
@@ -328,97 +316,6 @@ class AutoRogueTask(WWOneTimeTask, BaseCombatTask):
         if not clicked:
             self.click_relative(0.5, 0.5, after_sleep=1)
 
-    # def walk_to_box(self, find_function, time_out=30, end_condition=None, y_offset=0.05, x_offset=0.5):
-    #     if not find_function:
-    #         self.log_info('find_function not found, break')
-    #         return False
-    #     last_direction = None
-    #     start = time.time()
-    #     ended = False
-    #     last_target = None
-    #     centered = False
-    #     while time.time() - start < time_out:
-    #         self.next_frame()
-    #         if end_condition:
-    #             ended = end_condition()
-    #             if ended:
-    #                 break
-    #         treasure_icon = find_function()
-    #         if isinstance(treasure_icon, list):
-    #             if len(treasure_icon) > 0:
-    #                 treasure_icon = treasure_icon[0]
-    #             else:
-    #                 treasure_icon = None
-    #         if treasure_icon:
-    #             last_target = treasure_icon
-    #         if last_target is None:
-    #             next_direction = self.opposite_direction(last_direction)
-    #             self.log_info('find_function not found, change to opposite direction')
-    #         else:
-    #             x, y = last_target.center()
-    #             y = max(0, y - self.height_of_screen(y_offset))
-    #             x_abs = abs(x - self.width_of_screen(x_offset))
-    #             threshold = 0.03
-    #             centered = centered or x_abs <= self.width_of_screen(threshold)
-    #             if not centered:
-    #                 if x > self.width_of_screen(x_offset):
-    #                     next_direction = 'd'
-    #                 else:
-    #                     next_direction = 'a'
-    #             else:
-    #                 if y > self.height_of_screen(0.5):
-    #                     next_direction = 's'
-    #                 else:
-    #                     next_direction = 'w'
-    #         if next_direction != last_direction:
-    #             if last_direction:
-    #                 self.send_key_up(last_direction)
-    #                 self.sleep(0.01)
-    #             last_direction = next_direction
-    #             if next_direction:
-    #                 self.send_key_down(next_direction)
-    #     if last_direction:
-    #         self.send_key_up(last_direction)
-    #         self.sleep(0.01)
-    #     if not end_condition:
-    #         return last_direction is not None
-    #     else:
-    #         return ended
-
-    def calculate_color_percentage_in_masked(self, target_color, box, mask_r1_ratio=0.0, mask_r2_ratio=0.0):
-        cropped = box.crop_frame(self.frame).copy()
-        if cropped is None or cropped.size == 0:
-            return 0.0
-        h, w = cropped.shape[:2]
-
-        center = (w // 2, h // 2)
-        r1, r2 = h * mask_r1_ratio, h * mask_r2_ratio
-        r1 = Decimal(str(r1)).quantize(Decimal('0'), rounding=ROUND_DOWN)
-        r2 = Decimal(str(r2)).quantize(Decimal('0'), rounding=ROUND_UP)
-
-        ring_mask = np.zeros((h, w), dtype=np.uint8)
-        if r2 > 0:
-            cv2.circle(ring_mask, center, int(r2), 255, -1)
-        if r1 > 0:
-            cv2.circle(ring_mask, center, int(r1), 0, -1)
-        masked_image = cv2.bitwise_and(cropped, cropped, mask=ring_mask)
-
-        if masked_image.ndim == 3:
-            non_black_mask = np.all(masked_image != 0, axis=2)
-        else:
-            return 0.0
-
-        free_space = np.count_nonzero(non_black_mask)
-        if free_space == 0:
-            return 0.0
-
-        lower_bound, upper_bound = color_range_to_bound(target_color)
-        gray = cv2.inRange(masked_image, lower_bound, upper_bound)
-        colored_pixels = np.count_nonzero(gray == 255)
-
-        color_percent = colored_pixels / free_space
-        return color_percent
-
 
 def isolate_gold_text(cv_image):
     match_mask = cv2.inRange(cv_image, lower_gold_text, upper_gold_text)
@@ -427,9 +324,3 @@ def isolate_gold_text(cv_image):
 
 lower_gold_text = np.array([100, 170, 185], dtype=np.uint8)  # BGR
 upper_gold_text = np.array([125, 195, 210], dtype=np.uint8)  # BGR
-
-ring_purple_color = {
-    'r': (135, 165),  # Red range
-    'g': (125, 155),  # Green range
-    'b': (230, 255)  # Blue range
-}  # 151,141,245

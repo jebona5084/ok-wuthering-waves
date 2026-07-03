@@ -26,7 +26,6 @@ class Zani(BaseChar):
         self.blazes_threshold = -1
         self.char_phoebe = None
         self.crisis_time = -1
-        self.nightfall_time = -1
         self.state = 0
         self.chair_time = -1
         self.last_liber2 = -1
@@ -222,8 +221,6 @@ class Zani(BaseChar):
                 self.task.next_frame()
             self.sleep(0.25, check_combat=False)
             self.continues_right_click(0.1)
-        else:
-            self.nightfall_time = time.time()
 
     def is_nightfall_ready(self, threshold=0.15):
         box = self.task.box_of_screen_scaled(2560, 1440, 1853, 1233, 1964, 1344, name='zani_attack', hcenter=True)
@@ -262,16 +259,6 @@ class Zani(BaseChar):
             return 0.0
         return match_count / total_mask_area
     
-    def nightfall_time_left(self):
-        if self.nightfall_time <= 0:
-            return 0
-        result = 2.2 - self.time_elapsed_accounting_for_freeze(self.nightfall_time, intro_motion_freeze=True)
-        if self.nightfall_time <= 0:
-            self.nightfall_time = -1
-            return 0
-        self.logger.debug(f'nightfall_time_left: {result}')
-        return result
-
     def standard_defense_protocol_combo(self):
         if self.is_forte_full():
             return State.FORTE_FULL
@@ -493,13 +480,6 @@ class Zani(BaseChar):
         if has_intro and self.crisis_time_left() > 0:
             return SwitchPriority.NO
         return super().get_switch_priority(current_char, has_intro, target_low_con)
-
-    def wait_switch(self):
-        if self.has_intro and self.nightfall_time_left() > 0:
-            self.logger.debug(f'has_intro {self.has_intro}, wait nightfall end')
-            if self.nightfall_time_left() > 0 and self.liberation_time_left() >= 2:
-                return True
-        return False
 
     def check_liber(self):
         if not self.task.in_team_and_world():

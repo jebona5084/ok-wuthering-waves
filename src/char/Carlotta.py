@@ -9,7 +9,6 @@ from src.char.BaseChar import BaseChar, SwitchPriority
 class Carlotta(BaseChar):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.switch_lock = -1
         self.press_w = -1
         self.char_zhezhi = None
         self.forte = 0
@@ -18,7 +17,6 @@ class Carlotta(BaseChar):
 
     def reset_state(self):
         super().reset_state()
-        self.switch_lock = -1
         self.press_w = -1
         self.char_zhezhi = None
         self.forte = 0
@@ -46,7 +44,6 @@ class Carlotta(BaseChar):
                     auto_dodge = time.time()
                 self.check_combat()
             self.click_echo()
-            self.switch_lock = time.time()
             return self.switch_next_char()
         if self.resonance_available():
             if self.bullet == 0:
@@ -121,7 +118,6 @@ class Carlotta(BaseChar):
         resonance_click_time = 0
         animated = False
         start = time.time()
-        last = start
         while True:
             if time.time() - start > (time_out or 10):
                 self.task.in_liberation = False
@@ -205,7 +201,6 @@ class Carlotta(BaseChar):
                 self.heavy_attack()
             if self.click_resonance()[0]:
                 self.forte += 2
-                self.switch_lock = time.time()
                 return self.switch_next_char()
         if self.get_ready():
             self.continue_liberation = False
@@ -228,7 +223,6 @@ class Carlotta(BaseChar):
         self.switch_next_char()
 
     def do_perform_outro(self):
-        res = True
         self.char_zhezhi.forte = 0
         self.get_forte()
         if not self.liberation_ready:
@@ -271,14 +265,8 @@ class Carlotta(BaseChar):
                 if not self.liberation_available() and not self.resonance_available() and click:
                     break
                 self.check_combat()
-        if self.click_echo(time_out=2):
-            self.switch_lock = time.time()
+        self.click_echo(time_out=2)
         self.continue_liberation = not liber
-
-    def wait_switch(self):
-        if self.has_intro and self.time_elapsed_accounting_for_freeze(self.switch_lock, True) < 2.5:
-            return True
-        return False
 
     def judge_frequncy_and_amplitude(self, gray, min_freq, max_freq, min_amp):
         height, width = gray.shape[:]
