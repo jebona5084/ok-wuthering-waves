@@ -92,7 +92,7 @@ class Cartethyia(BaseChar):
              if c is not None and type(c).__name__ == 'Ciaccona'), None)
         self.rover = next(
             (c for c in self.task.chars
-             if c is not None and type(c).__name__ == 'HavocRover'), None)
+             if c is not None and type(c).__name__ == 'Rover'), None)
         self.teammate_decided = True
         self.logger.debug(f'cartethyia teammate ciaccona: {self.ciaccona}')
 

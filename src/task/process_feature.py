@@ -8,12 +8,13 @@ def process_feature(feature_name, feature):
         feature.mat = binarize_for_matching(feature.mat)
     elif feature_name == 'world_earth_icon':
         feature.mat = convert_bw(feature.mat)
-    elif feature_name == 'skip_dialog':
+    elif feature_name in ('skip_dialog', 'skip_dialog_new'):
         feature.mat = convert_dialog_icon(feature.mat)
     elif feature_name == 'mouse_forte':
         feature.mat = binarize_for_matching(feature.mat)
     elif feature_name == 'e_forte':
-        # find_e_forte binarizes the frame; the template must get the same
-        # transform or confidences are meaningless (the raw template scored
-        # 0.53 against its own annotation source frame, below the 0.6 threshold)
-        feature.mat = binarize_for_matching(feature.mat)
+        # find_e_forte binarizes the frame (threshold 220); the template must
+        # get the same transform or confidences are meaningless (the raw
+        # template scored 0.53 against its own annotation source frame,
+        # below the 0.6 threshold)
+        feature.mat = binarize_for_matching(feature.mat, 220)

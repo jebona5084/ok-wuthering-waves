@@ -801,11 +801,8 @@ msgstr "텔레포트할 주간 보스 번호"
 msgid "Which Boss Challenge to Teleport"
 msgstr "텔레포트할 보스 도전 번호"
 
-msgid "For Example, Denia, From Top to Bottom, Starting with 1"
-msgstr "예: Denia, 위에서 아래로, 1부터 시작"
-
-msgid "For Example, Nameless Explorer, From Top to Bottom, Starting with 1"
-msgstr "예: Nameless Explorer, 위에서 아래로, 1부터 시작"
+msgid "From Top to Bottom, Starting with 1"
+msgstr "위에서 아래로, 1부터 시작"
 
 msgid "Characters"
 msgstr "캐릭터"
@@ -1099,8 +1096,291 @@ msgstr "작업이 중지될 때까지 정원 동작을 감지하고 클릭합니
 msgid "Check Weekly Garden"
 msgstr "주간 정원 확인"
 
-msgid "After claiming daily rewards, check weekly Garden progress and run Garden Task if 6000 points has not been reached."
+msgid ""
+"After claiming daily rewards, check weekly Garden progress and run Garden "
+"Task if 6000 points has not been reached."
 msgstr "일일 보상을 수령한 뒤 주간 정원 진행도를 확인하고, 6000점에 도달하지 않았으면 정원 임무를 실행합니다."
 
 msgid "Guidebook Key"
 msgstr "솔라리스 가이드"
+
+msgid "Rover"
+msgstr "방랑자"
+
+msgid "Yangyang: Xuanling"
+msgstr "양양·현령"
+
+msgid "Merge Discarded Echoes"
+msgstr "폐기된 에코 합성"
+
+msgid ""
+"Must have 1000 discarded Echo to Run, Merge discarded Echoes in full "
+"batches of 100."
+msgstr "실행하려면 폐기된 에코가 1000개 있어야 합니다. 폐기된 에코를 100개 단위로 합성합니다."
+
+msgid "Bag Key"
+msgstr "가방 키"
+
+msgid "In-game hotkey used to open the Bag."
+msgstr "가방을 여는 게임 내 단축키입니다."
+
+msgid "Echo"
+msgstr "에코"
+
+msgid "Check Discarded Echo"
+msgstr "폐기된 에코 확인"
+
+msgid "After daily tasks, check for 1000 discarded Echoes and merge them."
+msgstr "일일 작업 후 폐기된 에코가 1000개 있는지 확인하고 합성합니다."
+
+msgid "Teleport and Farm 4C Echo"
+msgstr "순간이동 후 코스트 4 에코 파밍"
+
+msgid "Merge Echo If discarded > 1000"
+msgstr "폐기된 에코가 1000개 초과면 합성"
+
+msgid "Additional Tasks to Run After Daily Task"
+msgstr "일일 작업 후 실행할 추가 작업"
+
+msgid "Select optional tasks. Nightmare Nest runs before stamina farming to help complete the daily task; the other tasks run afterward."
+msgstr "선택 작업을 고르세요. 악몽 둥지는 일일 작업 완료를 돕기 위해 스태미나 파밍 전에 실행하고, 다른 작업은 그 후에 실행합니다."
+
+msgid "Teleport and Farm 4C Echo requires \"Teleport to Boss\" to be enabled in Farm Echo Task."
+msgstr "순간이동 후 코스트 4 에코 파밍을 실행하려면 에코 파밍 작업에서 \"보스로 순간이동\"을 활성화해야 합니다."
+
+msgid "Auto Farm all Nightmare Nest requires at least one \"Which to Farm\" option."
+msgstr "모든 악몽 둥지 자동 파밍을 실행하려면 \"파밍 대상\"을 하나 이상 선택해야 합니다."
+
+msgid "Daily Task Completed"
+msgstr "일일 작업 완료"
+
+msgid "Daily task completed, start teleport to farm 4C echo"
+msgstr "일일 작업 완료. 순간이동 후 코스트 4 에코 파밍을 시작합니다"
+
+msgid "can't find dialog right button"
+msgstr "대화 상자의 오른쪽 버튼을 찾을 수 없습니다"
+
+msgid "can't find dialog left button"
+msgstr "대화 상자의 왼쪽 버튼을 찾을 수 없습니다"
+
+msgid "⚔️ Auto Combat"
+msgstr "⚔️ 자동 전투"
+
+msgid "🔑 Auto Login"
+msgstr "🔑 자동 로그인"
+
+msgid "🌸 Auto Pick"
+msgstr "🌸 자동 채집"
+
+msgid "🎛️ 批量修改声骸主属性(仅支持简中游戏语言)"
+msgstr "🎛️ 에코 주 옵션 일괄 변경(중국어 간체만 지원)"
+
+msgid "📅 Daily Task"
+msgstr "📅 일일 작업"
+
+msgid "🩺 Diagnosis"
+msgstr "🩺 진단"
+
+msgid "⬆️ 批量强化声骸(游戏与okww语言必须为简体/繁体中文)"
+msgstr "⬆️ 에코 일괄 강화(게임과 okww는 중국어 간체/번체 필요)"
+
+msgid "🌀 Farm 4C Echo in Dungeon/World"
+msgstr "🌀 던전/월드에서 코스트 4 에코 파밍"
+
+msgid "🗺️ Farm Map with Star Path"
+msgstr "🗺️ 별 경로로 맵 파밍"
+
+msgid "✈️ Fast Travel"
+msgstr "✈️ 빠른 이동"
+
+msgid "♻️ 数据坞五合一"
+msgstr "♻️ 데이터 뱅크 5개 합성"
+
+msgid "⚒️ Forgery Challenge"
+msgstr "⚒️ 응소 영역 도전"
+
+msgid "🎡 自动周常乐园"
+msgstr "🎡 주간 낙원 자동 진행"
+
+msgid "♻️ Merge Discarded Echoes"
+msgstr "♻️ 폐기 에코 합성"
+
+msgid "🖱️ Prevent Wuthering Waves from moving the mouse"
+msgstr "🖱️ Wuthering Waves의 마우스 이동 방지"
+
+msgid "👥 Multi Account Daily Task"
+msgstr "👥 다중 계정 일일 작업"
+
+msgid "🌙 Nightmare Nest Task"
+msgstr "🌙 악몽 둥지 작업"
+
+msgid "🧪 Simulation Challenge"
+msgstr "🧪 시뮬레이션 도전"
+
+msgid "⏭️ Skip Dialog during Quests"
+msgstr "⏭️ 퀘스트 대화 건너뛰기"
+
+msgid "🌊 Tacet Suppression"
+msgstr "🌊 무음 구역"
+
+msgid "点击B进入背包, 在过滤器中选择需要修改主属性的声骸, 并按照等级从0排序后开始."
+msgstr "B를 눌러 가방을 열고 필터에서 주 옵션을 변경할 에코를 선택한 뒤, 레벨 0부터 오름차순으로 정렬하고 시작하세요."
+
+msgid "点击B进入背包, 在过滤器中选择需要强化的声骸, 并按照等级从0排序后开始."
+msgstr "B를 눌러 가방을 열고 필터에서 강화할 에코를 선택한 뒤, 레벨 0부터 오름차순으로 정렬하고 시작하세요."
+
+msgid "游戏与okww语言必须为简体/繁体中文,必须16:9分辨率,使用1600x900以上分辨率, 勾选需要的, 没勾的都会自动合成"
+msgstr "게임과 okww 언어는 중국어 간체/번체여야 하며, 16:9 비율의 1600x900 이상 해상도가 필요합니다. 필요한 항목을 체크하면 체크하지 않은 항목은 자동으로 합성됩니다."
+
+msgid "Switch to Healer before and after Combat"
+msgstr "전투 전후에 힐러로 전환"
+
+msgid "All fields are required."
+msgstr "모든 항목을 입력해야 합니다."
+
+msgid "Author"
+msgstr "작성자"
+
+msgid "Choose Export Folder"
+msgstr "내보낼 폴더 선택"
+
+msgid "Confirm Import"
+msgstr "가져오기 확인"
+
+msgid "Create Team"
+msgstr "팀 만들기"
+
+msgid "Create or import a team to edit character code."
+msgstr "캐릭터 코드를 편집하려면 팀을 만들거나 가져오세요."
+
+msgid "Description"
+msgstr "설명"
+
+msgid "Export"
+msgstr "내보내기"
+
+msgid "Export Team"
+msgstr "팀 내보내기"
+
+msgid "Import"
+msgstr "가져오기"
+
+msgid "Import Team"
+msgstr "팀 가져오기"
+
+msgid "Importing will override the local code for this team."
+msgstr "가져오면 이 팀의 로컬 코드를 덮어씁니다."
+
+msgid "Invalid Team Archive"
+msgstr "잘못된 팀 압축 파일"
+
+msgid "Missing Information"
+msgstr "정보 누락"
+
+msgid "Modified"
+msgstr "수정 시간"
+
+msgid "Name"
+msgstr "이름"
+
+msgid "No shared code is available for this team."
+msgstr "이 팀에 공유된 코드가 없습니다."
+
+msgid "Reset Character Code"
+msgstr "캐릭터 코드 초기화"
+
+msgid "Reset this character to built in code for this team?"
+msgstr "이 팀에서 이 캐릭터를 기본 제공 코드로 초기화할까요?"
+
+msgid "Reset to Built In"
+msgstr "기본 제공 코드로 초기화"
+
+msgid "Save changes before exporting."
+msgstr "내보내기 전에 변경 사항을 저장하세요."
+
+msgid "Select 3 different characters"
+msgstr "서로 다른 캐릭터 3명 선택"
+
+msgid "Size"
+msgstr "크기"
+
+msgid "Team"
+msgstr "팀"
+
+msgid "Team Workshop"
+msgstr "팀 워크숍"
+
+msgid "Team character code saved and reloaded for the matching team."
+msgstr "팀 캐릭터 코드를 저장하고 일치하는 팀에 다시 불러왔습니다."
+
+msgid "Team character code saved."
+msgstr "팀 캐릭터 코드를 저장했습니다."
+
+msgid "Team created."
+msgstr "팀을 만들었습니다."
+
+msgid "Team exported to {path}"
+msgstr "팀을 {path}에 내보냈습니다"
+
+msgid "Team imported and reloaded for the matching team."
+msgstr "팀을 가져오고 일치하는 팀에 다시 불러왔습니다."
+
+msgid "Team imported."
+msgstr "팀을 가져왔습니다."
+
+msgid "Teams"
+msgstr "팀"
+
+msgid "The archive is for a different team."
+msgstr "이 압축 파일은 다른 팀용입니다."
+
+msgid "Upload Team"
+msgstr "팀 업로드"
+
+msgid "Version"
+msgstr "버전"
+
+msgid "Workshop"
+msgstr "워크숍"
+
+msgid "Workshop Error"
+msgstr "워크숍 오류"
+
+msgid "Workshop archive is too large."
+msgstr "워크숍 압축 파일이 너무 큽니다."
+
+msgid "Workshop download URL is invalid."
+msgstr "워크숍 다운로드 URL이 잘못되었습니다."
+
+msgid "Zip files (*.zip)"
+msgstr "ZIP 파일 (*.zip)"
+
+msgid "Workshop response is too large."
+msgstr "워크숍 응답이 너무 큽니다."
+
+msgid "Workshop returned invalid JSON."
+msgstr "워크숍에서 잘못된 JSON을 반환했습니다."
+
+msgid "Workshop response is invalid."
+msgstr "워크숍 응답이 잘못되었습니다."
+
+msgid "Workshop returned a different team."
+msgstr "워크숍에서 다른 팀을 반환했습니다."
+
+msgid "Cancel"
+msgstr "취소"
+
+msgid "Close"
+msgstr "닫기"
+
+msgid "{team_name} - Team Workshop"
+msgstr "{team_name} - 팀 워크숍"
+
+msgid "Delete Team"
+msgstr "팀 삭제"
+
+msgid "Permanently delete the team {team}?"
+msgstr "{team} 팀을 영구적으로 삭제하시겠습니까?"
+
+msgid "Team deleted."
+msgstr "팀을 삭제했습니다."

@@ -8,7 +8,7 @@ from ok import safe_get
 from src import text_white_color
 from src.char import BaseChar
 from src.char.BaseChar import SwitchPriority, dot_color  # noqa
-from src.char.CharFactory import get_char_by_pos
+from src.char.CharFactory import apply_team_char_classes, get_char_by_pos
 from src.combat.CombatCheck import CombatCheck
 from src.task.BaseWWTask import isolate_white_text_to_black, binarize_for_matching
 
@@ -35,7 +35,8 @@ mismatched_names = {
     "Luhesi": "Luuk Herssen",
     "Xiangliyao": "Xiangli Yao",
     "ShoreKeeper": "Shorekeeper",
-    "HavocRover": "Rover: Havoc"
+    "Rover": "Rover",
+    "YangYangSp": "Yangyang: Xuanling",
 }
 
 # =============================================================================
@@ -487,7 +488,9 @@ def resolve_con_reading(state, profile, now, frame_key, char_key):
 
 
 class BaseCombatTask(CombatCheck):
+    owns_switch_healer_config = False
     """基础战斗任务类，封装了游戏"鸣潮"中角色自动化操作的通用逻辑。"""
+    CD_OCR_REFERENCE_ASPECT_RATIO = 16 / 9
     hot_key_verified = False  # 热键是否已验证
     # NOTE: the old persisted per-element full-size baseline (con_full_size
     # Config) is GONE with the area channel: the geometric reader measures the
@@ -604,12 +607,14 @@ class BaseCombatTask(CombatCheck):
         cds['resonance'] = 0
         cds['liberation'] = 0
         cds['echo'] = 0
-        texts = self.ocr(0.81, 0.86, 0.97, 0.93, frame_processor=isolate_white_text_to_black, match=cd_regex)
+        cd_x = self._cd_ocr_relative_x
+        texts = self.ocr(cd_x(0.82), 0.86, cd_x(0.97), 0.93,
+                         frame_processor=isolate_white_text_to_black, match=cd_regex)
         for text in texts:
             cd = convert_cd(text)
-            if text.x < self.width_of_screen(0.86):
+            if text.x < self.width_of_screen(cd_x(0.86)):
                 cds['resonance'] = cd
-            elif text.x > self.width_of_screen(0.91):
+            elif text.x > self.width_of_screen(cd_x(0.91)):
                 cds['liberation'] = cd
             else:
                 cds['echo'] = cd
@@ -629,6 +634,16 @@ class BaseCombatTask(CombatCheck):
         if char_index is not None:
             self.cds.pop(char_index, None)
         self.scene.cd_refreshed = False
+
+    def _cd_ocr_relative_x(self, x):
+        """Translate a 16:9 HUD x-coordinate to the current screen width.
+
+        The skill row keeps its size relative to screen height, so ultrawide
+        displays add horizontal space outside the 16:9 HUD layout.
+        """
+        screen_width = self.width_of_screen(1)
+        reference_width = min(screen_width, self.height_of_screen(1) * self.CD_OCR_REFERENCE_ASPECT_RATIO)
+        return 1 - (1 - x) * reference_width / screen_width
 
     def get_cd(self, box_name, char_index=None):
         self.refresh_cd()
@@ -650,7 +665,8 @@ class BaseCombatTask(CombatCheck):
         Returns:
             bool: True 表示通过点击按钮关闭, False 表示回退到了 ESC。
         """
-        if self.wait_click_feature('cancel_button_hcenter_vcenter',
+        if self.wait_click_feature(['cancel_button_hcenter_vcenter',
+                                    'cancel_button_highlight_hcenter_vcenter'],
                                    raise_if_not_found=False,
                                    time_out=1.2,
                                    click_after_delay=0.2,
@@ -696,19 +712,19 @@ class BaseCombatTask(CombatCheck):
         # ① F2 图鉴 → 全部怪物 → 搜索对应语言的无冠者
         gray_book = self.openF2Book("gray_book_all_monsters")
         self.click_box(gray_book, after_sleep=1)
-        self.click(0.13, 0.14, after_sleep=0.5)        # 搜索图标
+        self.click(0.13, 0.14, after_sleep=0.5)  # 搜索图标
         self.input_text(self.get_revive_search_boss_name())
         self.sleep(0.3)
-        self.click(0.20, 0.14, after_sleep=0.3)         # 点搜索框确保焦点
-        self.send_key('enter', after_sleep=0.5)          # 回车确认搜索, 刷新结果列表
-        self.click(0.13, 0.24, after_sleep=0.5)         # 选中第一条结果
+        self.click(0.20, 0.14, after_sleep=0.3)  # 点搜索框确保焦点
+        self.send_key('enter', after_sleep=0.5)  # 回车确认搜索, 刷新结果列表
+        self.click(0.13, 0.24, after_sleep=0.5)  # 选中第一条结果
         # ② 点"探测"打开地图并定位到目标 boss (只点一次, 避免地图打开后误触传送点)
         self.click(0.89, 0.92, after_sleep=1)
         # ③ 等待地图打开 (检测地图传送点), 若未打开则补点一次兜底
         if not self.wait_until(lambda: self.find_best_match_in_box(
                 self.box_of_screen(0.1, 0.1, 0.9, 0.9),
                 ['map_way_point', 'map_way_point_big'], 0.6) is not None,
-                time_out=4, raise_if_not_found=False):
+                               time_out=4, raise_if_not_found=False):
             logger.warning('revive_at_tower_and_heal: map not opened, retry探测')
             self.click(0.89, 0.92, after_sleep=1)
         # ④ 在已打开的地图上找最近传送点回血
@@ -769,6 +785,20 @@ class BaseCombatTask(CombatCheck):
             exception_type = NotInCombatException
         raise exception_type(message)
 
+    def wait_combat(self, target=True, time_out=10, raise_if_not_found=True):
+        start = time.time()
+        result = None
+        while time.time() - start < time_out:
+            if result := self.in_combat():
+                break
+            if target:
+                self.middle_click(interval=0.5)
+            self.sleep(0.02)
+
+        if raise_if_not_found and not result:
+            raise Exception('wait condition failed while walking')
+        return result
+
     def available(self, name, check_color=True, check_cd=True):
         """检查指定名称的技能或动作是否可用 (通过颜色百分比和冷却时间判断)。
 
@@ -794,7 +824,7 @@ class BaseCombatTask(CombatCheck):
             current = 0
         return current
 
-    def combat_once(self, wait_combat_time=200, raise_if_not_found=True):
+    def combat_once(self, wait_combat_time=200, raise_if_not_found=True, target=False):
         """执行一次完整的战斗流程。
 
         Args:
@@ -802,8 +832,10 @@ class BaseCombatTask(CombatCheck):
             raise_if_not_found (bool, optional): 如果未找到战斗状态是否抛出异常。默认为 True。
         """
         if wait_combat_time > 0:
-            self.wait_until(self.in_combat, time_out=wait_combat_time, raise_if_not_found=raise_if_not_found)
-        self.load_chars()
+            result = self.wait_combat(target=target, time_out=wait_combat_time, raise_if_not_found=raise_if_not_found)
+        if self.switch_healer_enabled():
+            self.load_chars()
+            self.switch_healer()
         self.info['Combat Count'] = self.info.get('Combat Count', 0) + 1
         try:
             while self.in_combat():
@@ -814,8 +846,10 @@ class BaseCombatTask(CombatCheck):
         except NotInCombatException as e:
             logger.info(f'combat_once out of combat break {e}')
         self.combat_end()
-        self.switch_healer()
+        if self.switch_healer_enabled():
+            self.switch_healer()
         self.wait_in_team_and_world(time_out=10, raise_if_not_found=False)
+        return result
 
     def run_in_circle_to_find_echo(self, circle_count=3):
         """通过绕圈移动来尝试拾取声骸。
@@ -849,20 +883,21 @@ class BaseCombatTask(CombatCheck):
             return None
         return min(chars, key=lambda char: (char.last_switch_in_time, char.index))
 
-    def _switch_rule_3_target(self, candidates, allow_healer=True):
-        healers_without_buff = [
-            char for char in candidates
-            if allow_healer and char.is_healer and char.buff_time > 0 and not char.has_buff()
-        ]
-        if healers_without_buff:
-            return self._oldest_switch_target(healers_without_buff)
+    def _unbuffed_support_target(self, candidates, allow_healer=True):
+        role_order = ('is_healer', 'is_sub_dps') if allow_healer else ('is_sub_dps',)
+        for role in role_order:
+            target = self._oldest_switch_target([
+                char for char in candidates
+                if getattr(char, role) and char.buff_time > 0 and not char.has_buff()
+            ])
+            if target:
+                return target
+        return None
 
-        sub_dps_without_buff = [
-            char for char in candidates
-            if char.is_sub_dps and char.buff_time > 0 and not char.has_buff()
-        ]
-        if sub_dps_without_buff:
-            return self._oldest_switch_target(sub_dps_without_buff)
+    def _switch_rule_3_target(self, candidates, allow_healer=True):
+        unbuffed_support = self._unbuffed_support_target(candidates, allow_healer)
+        if unbuffed_support:
+            return unbuffed_support
 
         main_dps = [char for char in candidates if char.is_main_dps]
         if main_dps:
@@ -872,6 +907,22 @@ class BaseCombatTask(CombatCheck):
 
     def _target_has_switch_cd(self, char):
         return char.time_elapsed_accounting_for_freeze(char.last_switch_time) <= 1
+
+    def _log_switch_candidate(self, char, priority):
+        buff_active = char.has_buff()
+        buff_remaining = self._buff_remaining(char) if buff_active else 0
+        switch_cd = char.last_switch_time >= 0 and self._target_has_switch_cd(char)
+        logger.debug(
+            f'switch selection candidate={char} index={char.index} role={char.char_type} '
+            f'priority={priority} buff_active={buff_active} buff_remaining={buff_remaining:.2f} '
+            f'buff_time={char.buff_time} last_buff_time={char.last_buff_time:.3f} '
+            f'switch_cd={switch_cd} last_switch_time={char.last_switch_time:.3f}')
+
+    def _log_switch_choice(self, current_char, target, has_intro, reason):
+        logger.info(
+            f'switch selection result current={current_char}({current_char.char_type}) '
+            f'target={target}({target.char_type}) has_intro={has_intro} reason={reason}')
+        return target
 
     def _buff_remaining(self, char):
         if char.buff_time <= 0 or not char.has_buff():
@@ -894,11 +945,14 @@ class BaseCombatTask(CombatCheck):
         ]
         return self._oldest_switch_target(unbuffed_non_main)
 
-    def _choose_intro_switch_target(self, must_targets, normal_targets):
-        if must_targets:
-            return self._oldest_switch_target(must_targets)
-        for char_type in ('is_main_dps', 'is_sub_dps', 'is_healer'):
-            target = self._oldest_switch_target([char for char in normal_targets if getattr(char, char_type)])
+    def _choose_intro_switch_target(self, candidates):
+        unbuffed_support = self._unbuffed_support_target(candidates)
+        if unbuffed_support:
+            return unbuffed_support
+
+        role_order = ('is_main_dps', 'is_sub_dps', 'is_healer')
+        for char_type in role_order:
+            target = self._oldest_switch_target([char for char in candidates if getattr(char, char_type)])
             if target:
                 return target
         return None
@@ -931,35 +985,50 @@ class BaseCombatTask(CombatCheck):
         if not candidates:
             return current_char
 
-        must_targets = []
-        normal_targets = []
-        no_targets = []
+        prioritized_candidates = []
         for char in candidates:
-            switch_priority = char.get_switch_priority(current_char=current_char, has_intro=has_intro,
-                                                       target_low_con=target_low_con)
-            logger.debug(f'switch_next_char hook: {char} priority {switch_priority}')
-            if switch_priority == SwitchPriority.MUST:
-                must_targets.append(char)
-            elif switch_priority == SwitchPriority.NO:
-                no_targets.append(char)
+            if char.healer_full_con_switch_locked():
+                switch_priority = SwitchPriority.NO
             else:
-                normal_targets.append(char)
+                switch_priority = char.get_switch_priority(current_char=current_char, has_intro=has_intro,
+                                                           target_low_con=target_low_con)
+            self._log_switch_candidate(char, switch_priority)
+            if switch_priority > SwitchPriority.NO:
+                prioritized_candidates.append((switch_priority, char))
+
+        if not prioritized_candidates:
+            return self._log_switch_choice(
+                current_char, current_char, has_intro, 'no_candidate_above_no_priority')
+
+        highest_priority = max(priority for priority, _ in prioritized_candidates)
+        candidates = [char for priority, char in prioritized_candidates if priority == highest_priority]
 
         if has_intro:
-            return self._choose_intro_switch_target(must_targets, normal_targets) or current_char
-
-        if must_targets:
-            candidates = must_targets
-        else:
-            candidates = normal_targets
-            if not candidates:
-                return current_char
+            if highest_priority >= SwitchPriority.MUST:
+                target = self._oldest_switch_target(candidates) or current_char
+                return self._log_switch_choice(
+                    current_char, target, has_intro, f'priority_{highest_priority}')
+            target = self._choose_intro_switch_target(candidates) or current_char
+            if target != current_char and not target.is_main_dps and not target.has_buff():
+                reason = f'intro_unbuffed_{target.char_type.value.lower()}'
+            else:
+                reason = 'intro_role_order_main_sub_healer'
+            return self._log_switch_choice(current_char, target, has_intro, reason)
 
         candidates_without_switch_cd = [char for char in candidates if not self._target_has_switch_cd(char)]
         if candidates_without_switch_cd:
             candidates = candidates_without_switch_cd
 
-        return self._choose_switch_target_by_buff_time(current_char, candidates)
+        target = self._choose_switch_target_by_buff_time(current_char, candidates)
+        if target != current_char and not target.is_main_dps and not target.has_buff():
+            reason = f'unbuffed_{target.char_type.value.lower()}'
+        elif current_char.is_main_dps and not target.is_main_dps:
+            reason = 'lowest_support_buff_remaining'
+        elif not current_char.is_main_dps and target.is_main_dps:
+            reason = 'support_buffs_active_return_to_main_dps'
+        else:
+            reason = 'fallback_role_order'
+        return self._log_switch_choice(current_char, target, has_intro, reason)
 
     def _apply_intro_flags(self, current_char, switch_to, has_intro):
         switch_to.has_intro = has_intro
@@ -1037,7 +1106,10 @@ class BaseCombatTask(CombatCheck):
                 self._apply_intro_flags(current_char, switch_to, has_intro)
                 if has_intro:
                     current_char.f_break(check_f_on_switch=True)
-
+            if switch_to.wait_switch():
+                self.click()
+                self.sleep(0.1)
+                continue
             if now - last_click > 0.1:
                 self.send_key(switch_to.index + 1)
                 self.sleep(0.001)
@@ -1080,7 +1152,7 @@ class BaseCombatTask(CombatCheck):
 
     def find_e_forte(self):
         box = self.find_one('e_forte', horizontal_variance=0.025, threshold=0.6,
-                            frame_processor=binarize_for_matching)
+                            frame_processor=lambda img: binarize_for_matching(img, 220))
         if not box:
             return None
         # The utility-wheel prompt renders an E keycap in the same screen slot,
@@ -1160,13 +1232,24 @@ class BaseCombatTask(CombatCheck):
         self.clear_buff_overlay()
         current_char = self.get_current_char(raise_exception=False)
         if current_char:
-            self.get_current_char().on_combat_end(self.chars)
+            current_char.on_combat_end(self.chars)
+        for char in self.chars:
+            if char:
+                char.reset_state()
 
     def switch_healer(self):
-        if self.config.get('Switch to Healer after Combat'):
+        if self.switch_healer_enabled():
             current_char = self.get_current_char()
-            if current_char and not current_char.is_healer:
-                current_char.switch_other_char()
+            has_healer = any(char and char.is_healer for char in self.chars)
+            if current_char and not current_char.is_healer and has_healer:
+                current_char.switch_other_char(allow_auto_combat=True)
+
+    def switch_healer_enabled(self):
+        config_task = self
+        if not self.owns_switch_healer_config:
+            from src.task.AutoCombatTask import AutoCombatTask
+            config_task = self.get_task_by_class(AutoCombatTask)
+        return bool(config_task and config_task.config.get('Switch to Healer before and after Combat'))
 
     def sleep_check(self):
         """休眠指定时间, 并在休眠前后检查战斗状态。
@@ -1328,6 +1411,8 @@ class BaseCombatTask(CombatCheck):
                 self.chars = self.chars[:2]
                 logger.info(f'team size changed to 2')
 
+        apply_team_char_classes(self, self.chars)
+
         for char in self.chars:
             if char is not None:
                 char.reset_state()
@@ -1341,8 +1426,11 @@ class BaseCombatTask(CombatCheck):
                 translated_names = []
                 for c in self.chars:
                     if c is not None:
-                        class_name = c.name
-                        official_name = mismatched_names.get(class_name, class_name)
+                        if hasattr(c, 'ensure_display_form'):
+                            c.ensure_display_form()
+                        official_name = getattr(c, 'display_name', None) or mismatched_names.get(
+                            c.name, c.name
+                        )
                         # 单元测试时 self._app 为 None，此时不进行翻译，直接回传原名
                         translated_name = self.tr(official_name) if self._app is not None else official_name
                         translated_names.append(translated_name)
@@ -1353,7 +1441,9 @@ class BaseCombatTask(CombatCheck):
 
     @staticmethod
     def _char_identity(chars):
-        return tuple((char.char_name, char.name) if char is not None else None for char in chars)
+        return tuple(
+            (getattr(char, 'char_name', None), getattr(char, 'name', None)) if char is not None else None
+            for char in chars)
 
     @staticmethod
     def should_update(the_char, old_char):

@@ -1,4 +1,3 @@
-from qfluentwidgets import FluentIcon
 
 from ok import Logger
 from src.task.BaseCombatTask import BaseCombatTask, CharRevivedException
@@ -11,16 +10,14 @@ class TacetTask(WWOneTimeTask, BaseCombatTask):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.icon = FluentIcon.FLAG
-        self.group_name = "Dungeon"
-        self.group_icon = FluentIcon.HOME
         self.description = "Farms the selected Tacet Suppression, until no stamina. Must be able to teleport (F2)."
-        self.name = "Tacet Suppression"
+        self.name = "🌊 Tacet Suppression"
         self.support_schedule_task = True
         default_config = {
             'Which Tacet Suppression to Farm': 1,  # starts with 1
         }
-        self.total_number = 17
+        self.structure = [2, 5, 5, 7]
+        self.total_number = sum(self.structure)
         self.target_enemy_time_out = 10
         default_config.update(self.default_config)
         self.config_description = {
@@ -55,7 +52,6 @@ class TacetTask(WWOneTimeTask, BaseCombatTask):
         else:
             must_use = 0
         self.info_incr('used stamina', 0)
-        fail_count = 0
         while True:
             self.sleep(1)
             self.openF2Book("gray_book_boss")
@@ -69,53 +65,28 @@ class TacetTask(WWOneTimeTask, BaseCombatTask):
             self.open_boss_book('wuyin')
             index = config.get('Which Tacet Suppression to Farm', 1) - 1
             self.teleport_to_tacet(index)
-            self.wait_click_travel()
-            self.wait_in_team_and_world(time_out=120)
-            self.sleep(2)
-            if self.door_walk_method.get(index) is not None:
-                for method in self.door_walk_method.get(index):
-                    self.send_key_down(method[0])
-                    self.sleep(method[1])
-                    self.send_key_up(method[0])
-                    self.sleep(0.05)
-                reached_tacet = self.run_until(lambda: self.in_combat() or self.find_treasure_icon(), 'w',
-                                               time_out=5, running=True, target=False, post_walk=1)
-
-                if not reached_tacet:
-                    reached_tacet = self.run_until(lambda: self.in_combat() or self.find_treasure_icon(), 'w',
-                                                   time_out=5, running=True, target=True, post_walk=1)
-                    if not reached_tacet:
-                        raise Exception('Tacet can not walk to combat')
-                treasure_ready = not self.in_combat() and self.find_treasure_icon()
-            else:
-                self.walk_until_f(time_out=4, backward_time=0, raise_if_not_found=True)
-                self.pick_f(handle_claim=False)
-                treasure_ready = False
-            try:
-                if treasure_ready:
-                    self.log_info('farm_tacet: treasure already found, skip combat')
-                else:
-                    self.combat_once()
-                    self.sleep(3)
+            self.click_team_challenge()
+            while True:
+                self.wait_in_team_and_world(time_out=120)
+                self.combat_once(target=True)
                 self.walk_to_treasure()
                 self.pick_f(handle_claim=False)
-            except CharRevivedException:
-                self.log_info('farm_tacet: death recovered, re-enter from F2 book')
-                continue
-            except Exception as e:
-                fail_count += 1
-                self.log_error(f'farm_tacet: Exception, retry fail_count:{fail_count}', e)
-                if fail_count <= 3:
+                self.sleep(2)
+                if not self.has_claim_stamina():
+                    self.esc_cancel()
+                    self.log_info('is not claim treasure, restart challenge')
                     continue
+                can_continue, used = self.use_stamina(once=self.stamina_once, must_use=must_use)
+                self.info_incr('used stamina', used)
+                self.sleep(4)
+                if not can_continue:
+                    self.click_relative(0.365, 0.853, hcenter=True)
+                    self.wait_in_team_and_world(time_out=120)
+                    return None
                 else:
-                    raise e
-            can_continue, used = self.use_stamina(once=self.stamina_once, must_use=must_use)
-            self.info_incr('used stamina', used)
-            self.sleep(4)
-            self.click(0.51, 0.84, after_sleep=3)
-            if not can_continue:
-                return self.not_enough_stamina()
-            must_use -= used
+                    self.click_relative(0.640, 0.851, hcenter=True, after_sleep=0.2)
+                    self.wait_click_skip_dialog_confirm()
+                must_use -= used
 
     def not_enough_stamina(self, back=True):
         self.log_info(f"used all stamina")
@@ -126,4 +97,4 @@ class TacetTask(WWOneTimeTask, BaseCombatTask):
         self.info_set('Teleport to Tacet Suppression', index)
         if index >= self.total_number:
             raise IndexError(f'Index out of range, max is {self.total_number}')
-        self.click_on_book_target(index + 1, self.total_number)
+        return self.click_on_book_target(index + 1, self.total_number, self.structure)

@@ -16,6 +16,13 @@ class FakeBox:
 
 class TestNightmareNestTask(unittest.TestCase):
 
+    def test_nest_is_checked_before_nightmare_changes_book_scroll(self):
+        task = NightmareNestTask.__new__(NightmareNestTask)
+        task.config = {'Which to Farm': ['Nightmare Purification', 'Tacet Discord Nest']}
+        task._init_queue()
+        self.assertEqual(['go_nest', 'go_nightmare', 'go_nightmare_scroll'],
+                         [action.__name__ for action in task.queues])
+
     def test_capture_success_clears_combat_before_post_combat_waits(self):
         task = NightmareNestTask.__new__(NightmareNestTask)
         task._capture_mode = True
@@ -36,6 +43,43 @@ class TestNightmareNestTask(unittest.TestCase):
         self.assertEqual([False], picked)
         self.assertFalse(task._in_combat)
         self.assertEqual('echo captured', task.out_of_combat_reason)
+
+    def test_combat_nest_rechecks_after_pickup_in_team_and_open_world(self):
+        for feature_name in ('team_close', 'fast_travel_custom'):
+            with self.subTest(feature_name=feature_name):
+                task = NightmareNestTask.__new__(NightmareNestTask)
+                task._capture_mode = False
+                task._capture_success = False
+                combat_calls = []
+                pickup_calls = []
+                combat_results = iter([True, False])
+
+                task.click = lambda *args, **kwargs: None
+                task.wait_feature = lambda *args, **kwargs: FakeBox(feature_name)
+                task.click_team_challenge = lambda: None
+                task.wait_in_team_and_world = lambda *args, **kwargs: True
+                task._travel_to_nest_or_skip = lambda nest: True
+                task.sleep = lambda *args, **kwargs: None
+                task.find_f_with_text = lambda: False
+                task.run_until = lambda *args, **kwargs: None
+                task.combat_once = lambda **kwargs: combat_calls.append(kwargs) or True
+                task.walk_find_echo = lambda **kwargs: pickup_calls.append(kwargs) or True
+                task.wait_combat = lambda **kwargs: next(combat_results)
+                task.log_info = lambda *args, **kwargs: None
+                task.send_key = lambda *args, **kwargs: None
+                task.esc_world_confirm = lambda *args, **kwargs: None
+
+                task.combat_nest(FakeBox('nest'))
+
+                self.assertEqual([10, 1], [call['wait_combat_time'] for call in combat_calls])
+                self.assertEqual(2, len(pickup_calls))
+
+    def test_capture_mode_does_not_check_combat_after_pickup(self):
+        task = NightmareNestTask.__new__(NightmareNestTask)
+        task._capture_mode = True
+        task.wait_combat = lambda **kwargs: self.fail('capture mode should leave after obtaining an echo')
+
+        self.assertFalse(task._should_continue_combat_after_pickup())
 
     def test_unreachable_nest_is_cached_when_travel_does_not_enter_world(self):
         task = NightmareNestTask.__new__(NightmareNestTask)
@@ -61,6 +105,20 @@ class TestNightmareNestTask(unittest.TestCase):
         self.assertEqual([(travel, {'after_sleep': 1})], clicks)
         self.assertEqual([], world_waits)
         self.assertEqual([{'after_sleep': 1}], backs)
+
+    def test_travel_waits_up_to_120_seconds_for_loading(self):
+        task = NightmareNestTask.__new__(NightmareNestTask)
+        task._unreachable_nests = set()
+        travel = FakeBox('fast_travel_custom')
+        world_waits = []
+
+        task.wait_until = lambda *args, **kwargs: travel
+        task.find_one = lambda *args, **kwargs: None
+        task.click = lambda *args, **kwargs: None
+        task.wait_in_team_and_world = lambda *args, **kwargs: world_waits.append(kwargs) or True
+
+        self.assertTrue(task._travel_to_nest_or_skip(NestTarget(object(), 'go_nest:36:10')))
+        self.assertEqual([{'time_out': 120, 'raise_if_not_found': False}], world_waits)
 
     def test_find_nest_skips_cached_unreachable_row(self):
         task = NightmareNestTask.__new__(NightmareNestTask)

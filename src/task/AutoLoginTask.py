@@ -1,5 +1,3 @@
-from qfluentwidgets import FluentIcon
-
 from ok import TriggerTask, Logger
 from src.task.BaseWWTask import BaseWWTask
 
@@ -12,9 +10,8 @@ class AutoLoginTask(BaseWWTask, TriggerTask):
         super().__init__(*args, **kwargs)
         self.default_config = {'_enabled': True}
         self.trigger_interval = 5
-        self.name = "Auto Login"
+        self.name = "🔑 Auto Login"
         self.description = "Auto Login After Game Starts"
-        self.icon = FluentIcon.ACCEPT
 
     def run(self):
         if self.logged_in:

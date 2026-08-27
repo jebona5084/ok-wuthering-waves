@@ -1,5 +1,6 @@
 .venv
 onnxocr/
+ok_tasks/
 updates/
 working/
 update/
@@ -26,6 +27,7 @@ CLAUDE.md
 # C extensions
 ok
 ok/
+pyappify
 *.cpp
 *.pyx
 *.so
@@ -39,6 +41,7 @@ tests/logs/
 i18n/en_US/
 logs/
 build/
+site/
 develop-eggs/
 dist/
 downloads/
@@ -71,3 +74,4 @@ working_images/
 repo/
 
 assets/result.json
+src/gui/CharacterCodeTab.py

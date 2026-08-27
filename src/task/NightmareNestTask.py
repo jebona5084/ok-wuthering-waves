@@ -2,7 +2,6 @@ import re
 import cv2
 from dataclasses import dataclass
 
-from qfluentwidgets import FluentIcon
 from ok import Logger
 from src.task.BaseCombatTask import BaseCombatTask, CharRevivedException
 from src.task.WWOneTimeTask import WWOneTimeTask
@@ -25,17 +24,15 @@ class NightmareNestTask(WWOneTimeTask, BaseCombatTask):
         self.default_config = {'_enabled': True}
         self.trigger_interval = 0.1
         self.target_enemy_time_out = 10
-        self.name = "Nightmare Nest Task"
+        self.name = "🌙 Nightmare Nest Task"
         self.description = "Auto Farm all Nightmare Nest"
         self.support_schedule_task = True
-        self.group_name = "Daily"
-        self.group_icon = FluentIcon.HOME
-        self.icon = FluentIcon.CALORIES
         self.count_re = re.compile(r"(\d{1,2})/(\d{1,2})")
         self.queues = []
         self._capture_success = False
         self._capture_mode = False
         self._unreachable_nests = set()
+        self._nest_tab_of_current_nest = 'go_nest'
         self.default_config.update({'Which to Farm': ['Nightmare Purification', 'Tacet Discord Nest']})
         self.config_type['Which to Farm'] = {'type': "multi_selection",
                                              'options': ['Nightmare Purification', 'Tacet Discord Nest']}
@@ -75,7 +72,7 @@ class NightmareNestTask(WWOneTimeTask, BaseCombatTask):
 
     def has_echo_notification(self):
         if self.find_best_match_in_box(self.box_of_screen(0.078, 0.488, 0.094, 0.514),
-                                       ['char_1_text', 'char_3_text'], 0.7,
+                                       ['char_1_text', 'char_3_text'], 0.6,
                                        frame_processor=convert_image_to_negative):
             self._capture_success = True
         return self._capture_success
@@ -83,33 +80,73 @@ class NightmareNestTask(WWOneTimeTask, BaseCombatTask):
     def combat_nest(self, nest):
         target_box = nest.box if isinstance(nest, NestTarget) else nest
         self.click(target_box, after_sleep=2)
-        if not self._travel_to_nest_or_skip(nest):
-            return
-        self.sleep(1)
-        while self.find_f_with_text():
-            self.send_key('f', after_sleep=1)
-            self.wait_in_team_and_world(time_out=40, raise_if_not_found=False)
-        self.sleep(2)
-        self.run_until(self.in_combat, 'w', time_out=10, running=False, target=True)
-        try:
-            self.combat_once(wait_combat_time=0)
-        except CharRevivedException:
-            self.log_info('nightmare nest: death recovered, re-enter from F2 book')
-            return
-        if self._capture_mode:
-            if self._capture_success or self.wait_until(self.has_echo_notification, time_out=3):
-                self.log_info("Captured echo during combat, skipping search.")
+        feature = self.wait_feature(['fast_travel_custom', 'gray_teleport', 'remove_custom', 'team_close'], time_out=10,
+                                    settle_time=0.5, raise_if_not_found=True)
+        is_team = feature.name == 'team_close'
+        if is_team:
+            self.click_team_challenge()
+            self.wait_in_team_and_world(time_out=120)
+        else:
+            if not self._travel_to_nest_or_skip(nest):
                 return
-        else:
-            self.sleep(3)
-        if not self.walk_find_echo(time_out=5, backward_time=2.5):
-            dropped = self.yolo_find_echo(turn=True, use_color=False, time_out=30)[0]
-            logger.info(f'farm echo yolo find {dropped}')
-        else:
-            dropped = True
-            self.log_info(f'farm echo walk find true')
-        self._capture_success = dropped
+            self.sleep(1)
+            while self.find_f_with_text():
+                self.send_key('f', after_sleep=1)
+                self.wait_in_team_and_world(time_out=40, raise_if_not_found=False)
+            self.sleep(2)
+            self.run_until(self.in_combat, 'w', time_out=10, running=False, target=True)
+        wait_combat_time = 10
+        while True:
+            try:
+                need_find = self.combat_once(wait_combat_time=wait_combat_time, target=True,
+                                             raise_if_not_found=False)
+            except CharRevivedException:
+                self.log_info('nightmare nest: death recovered, re-enter from F2 book')
+                return
+            captured_early = False
+            if self._capture_mode:
+                if self._capture_success or self.wait_until(self.has_echo_notification, time_out=3):
+                    self.log_info("Captured echo during combat, skipping search.")
+                    captured_early = True
+            if not captured_early:
+                self.sleep(3)
+                if need_find and not self.walk_find_echo(time_out=5, backward_time=2.5):
+                    dropped = self.yolo_find_echo(turn=True, use_color=False, time_out=30)[0]
+                    logger.info(f'farm echo yolo find {dropped}')
+                    if not dropped and not is_team:
+                        # 保底：没有收取到声骸时，重新打开图鉴传送回当前聚落（传送点面朝金色声骸群），再搜索一次
+                        self.log_info('no echo collected, re-teleport to current nest as fallback')
+                        self.ensure_main(time_out=30)
+                        self.openF2Book("gray_book_boss")
+                        getattr(self, self._nest_tab_of_current_nest)()
+                        self.sleep(1)
+                        self.click(target_box, after_sleep=2)
+                        if self.wait_feature(TRAVEL_FEATURES, time_out=5, settle_time=0.5,
+                                            raise_if_not_found=False) and self._travel_to_nest_or_skip(nest):
+                            self.sleep(2)
+                            self.run_until(lambda: False, 'w', time_out=2, running=True)
+                            if not self.walk_find_echo(time_out=5, backward_time=2.5):
+                                dropped = self.yolo_find_echo(turn=True, use_color=False, time_out=30)[0]
+                                logger.info(f'farm echo yolo find after re-teleport {dropped}')
+                            else:
+                                dropped = True
+                                self.log_info('farm echo walk find true after re-teleport')
+                else:
+                    dropped = True
+                    self.log_info(f'farm echo walk find true')
+                self._capture_success = dropped
+            if not self._should_continue_combat_after_pickup():
+                break
+            self.log_info('nightmare nest: combat detected after pickup')
+            wait_combat_time = 1
+        # 与刷全部一致：退本后再结束 combat_nest，避免还在巢穴内回 Daily/开书
+        if is_team:
+            self.esc_world_confirm()
         self.sleep(1)
+
+    def _should_continue_combat_after_pickup(self):
+        return not self._capture_mode and self.wait_combat(
+            target=True, time_out=3, raise_if_not_found=False)
 
     def _travel_to_nest_or_skip(self, nest):
         travel = self.wait_until(self._find_travel_button, raise_if_not_found=False, time_out=1)
@@ -120,7 +157,7 @@ class NightmareNestTask(WWOneTimeTask, BaseCombatTask):
 
         button_still_visible = travel and self.find_one(travel.name, threshold=0.7)
         if travel and not button_still_visible and self.wait_in_team_and_world(
-                time_out=30, raise_if_not_found=False):
+                time_out=120, raise_if_not_found=False):
             return True
 
         if isinstance(nest, NestTarget):
@@ -145,17 +182,18 @@ class NightmareNestTask(WWOneTimeTask, BaseCombatTask):
         while self.queues:
             self.queues[0]()
             if nest := self.find_nest():
+                self._nest_tab_of_current_nest = self.queues[0].__name__
                 return nest
             self.queues.pop(0)
 
     def _init_queue(self):
         quests = self.config.get('Which to Farm') or ['Nightmare Purification', 'Tacet Discord Nest']
         actions = []
+        if 'Tacet Discord Nest' in quests:
+            actions.append(self.go_nest)
         if 'Nightmare Purification' in quests:
             actions.append(self.go_nightmare)
             actions.append(self.go_nightmare_scroll)
-        if 'Tacet Discord Nest' in quests:
-            actions.append(self.go_nest)
         self.queues = actions
 
     def go_nightmare(self):
@@ -171,12 +209,12 @@ class NightmareNestTask(WWOneTimeTask, BaseCombatTask):
         self.open_boss_book('canxiang')
 
     def find_nest(self):
-        counts = self.ocr(0.36, 0.13, 0.98, 0.91, match=self.count_re)
+        counts = self.ocr(0.35, 0.13, 1, 0.96, match=self.count_re)
         for count_box in counts:
             for match in re.finditer(self.count_re, count_box.name):
                 numerator = match.group(1)
                 denominator = match.group(2)
-                if numerator != denominator and denominator in ['24', '36', '48']:
+                if numerator != denominator and denominator in ['24', '36', '48', '41'] and numerator == '0':
                     cache_key = self._make_nest_cache_key(count_box, denominator)
                     if cache_key in self._unreachable_nests:
                         self.log_info(f'skip cached unreachable nightmare nest: {cache_key}')
@@ -199,7 +237,7 @@ class NightmareNestTask(WWOneTimeTask, BaseCombatTask):
 
 def convert_image_to_negative(img):
     to_gray = False
-    _mat = cv2.resize(img, None, fx=0.8, fy=0.8, interpolation=cv2.INTER_LINEAR)
+    _mat = img
     if len(_mat.shape) == 3:
         to_gray = True
         _mat = cv2.cvtColor(_mat, cv2.COLOR_BGR2GRAY)

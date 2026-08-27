@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 
 import numpy as np
 
-from ok import BaseTask, Logger, og, find_color_rectangles
+from ok import BaseTask, Logger, find_boxes_by_name, og, find_color_rectangles, mask_white, Box
 from ok import CannotFindException
 import cv2
 
@@ -16,12 +16,14 @@ logger = Logger.get_logger(__name__)
 number_re = re.compile(r'(\d+)')
 stamina_re = re.compile(r'(\d+)/(\d+)')
 LOGIN_TEXTS = ["登录", re.compile('Log', re.IGNORECASE), '登入']
+LOGIN_CLICK_SETTLE_TIME = 4  # seconds; keep below AutoLoginTask trigger_interval (5) so triggers don't overlap
 f_white_color = {
     'r': (235, 255),  # Red range
     'g': (235, 255),  # Green range
     'b': (235, 255)  # Blue range
 }
 processed_feature = False
+WIDE_MODE_UI_SCALE = 0.75
 
 
 class BaseWWTask(BaseTask):
@@ -111,6 +113,9 @@ class BaseWWTask(BaseTask):
                                          y_offset=-f_search_box.height * 5,
                                          name='search_dialog')
         return f_search_box
+
+    def find_f_with_claim_text(self):
+        return self.find_f_with_text(target_text=[re.compile('领取|領取|Claim', re.IGNORECASE)])
 
     def find_f_with_text(self, target_text=None):
         f = self.find_one(Labels.pick_up_f_hcenter_vcenter, box=self.f_search_box, threshold=0.8)
@@ -333,7 +338,8 @@ class BaseWWTask(BaseTask):
         return "w" if delta_y > 0 else "s"
 
     def find_treasure_icon(self):
-        return self.find_one('treasure_icon', box=self.box_of_screen(0.03, 0.1, 0.97, 0.81), threshold=0.8,
+        return self.find_one('treasure_icon', box=self.box_of_screen(0.03, 0.1, 0.97, 0.81, hcenter=True, vcenter=True),
+                             threshold=0.8,
                              target_height=720)
 
     def click(self, x=-1, y=-1, move_back=False, name=None, interval=-1, move=False, down_time=0.01, after_sleep=0,
@@ -415,29 +421,31 @@ class BaseWWTask(BaseTask):
         self.info_set('back_up_stamina', back_up)
         return current, back_up, current + back_up
 
-    def use_stamina(self, once, must_use=0):
+    def use_stamina(self, once=60, must_use=0):
         self.sleep(1)
         current, back_up, total = self.get_stamina()
-        y = 0.62
         if current >= once * 2:
             used = once * 2
-            x = 0.67
+            use_double = True
             logger.info(f"当前体力大于等于双倍, {current} >= {once * 2}")
         elif must_use > once and total >= once * 2:
             used = once * 2
-            x = 0.67
+            use_double = True
             logger.info(f"当前加备用大于日常剩余所需, 使用双倍, {must_use} >= {once} and {total} >= {once * 2}")
         else:
             used = once
-            x = 0.32
+            use_double = False
             logger.info(f"使用单倍体力")
-        self.click(x, y, after_sleep=1)
+        if use_double:
+            btn = self.click_dialog_right_button()
+        else:
+            btn = self.click_dialog_left_button()
         if self.wait_feature('gem_add_stamina', horizontal_variance=0.4, vertical_variance=0.05,
-                             time_out=2):  # 看是否需要使用备用体力
-            self.click(0.70, 0.71, after_sleep=1)  # 点击确认
-            self.click(0.70, 0.71, after_sleep=1)
+                             time_out=2, settle_time=0.5):  # 看是否需要使用备用体力
+            self.click_relative(0.70, 0.71, hcenter=True, after_sleep=1)  # 点击确认
+            self.click_relative(0.70, 0.71, hcenter=True, after_sleep=1)
             self.back(after_sleep=1)
-            self.click(x, y, after_sleep=1)
+            self.click(btn, after_sleep=1)
 
         current -= used
         must_use -= used
@@ -515,13 +523,8 @@ class BaseWWTask(BaseTask):
             logger.info(f"handle_claim_button found a claim reward")
             return True
 
-    def handle_claim_button_now(self):
-        if self.has_claim():
-            self.sleep(0.5)
-            self.send_key('esc')
-            self.sleep(0.2)
-            logger.info(f"handle_claim_button_now found a claim reward")
-            return True
+    def has_claim_stamina(self):
+        return not self.in_team()[0] and self.find_one('claim_stamina_sign')
 
     def has_claim(self):
         return not self.in_team()[0] and self.find_one('claim_cancel_button_hcenter_vcenter', horizontal_variance=0.05,
@@ -578,7 +581,7 @@ class BaseWWTask(BaseTask):
 
     def pick_f(self, handle_claim=True):
         if self.find_one('pick_up_f_hcenter_vcenter', box=self.f_search_box, threshold=0.8):
-            self.send_key('f', after_sleep=0.8)
+            self.send_key('f', after_sleep=1)
             if not handle_claim:
                 return True
             if not self.handle_claim_button():
@@ -599,7 +602,7 @@ class BaseWWTask(BaseTask):
 
     def walk_to_treasure(self, send_f=True, raise_if_not_found=True):
         self.log_info('start walk_to_treasure')
-        if not self.walk_to_box(self.find_treasure_icon, end_condition=self.find_f_with_text):
+        if not self.walk_to_box(self.find_treasure_icon, end_condition=self.find_f_with_claim_text):
             if not self.walk_to_box(self.find_treasure_icon, end_condition=self.find_f_with_text):
                 raise Exception(f'can not walk to treasure!')
         if send_f:
@@ -674,8 +677,40 @@ class BaseWWTask(BaseTask):
         success = self.wait_until(self.in_team_and_world, time_out=time_out, raise_if_not_found=raise_if_not_found,
                                   post_action=lambda: self.back(after_sleep=2) if esc else None)
         if success:
-            self.sleep(0.1)
+            self.sleep(0.5)
         return success
+
+    def esc_world_confirm(self, send_esc=True):
+        if send_esc:
+            self.send_key('esc', after_sleep=1)
+        self.click_dialog_right_button()
+        self.wait_in_team_and_world(time_out=120)
+
+    def click_dialog_right_button(self):
+        confirm = self.find_one([
+            Labels.confirm_btn_hcenter_vcenter,
+            Labels.confirm_btn_highlight_hcenter_vcenter,
+        ])
+        if not confirm:
+            raise CannotFindException(self.tr("can't find dialog right button"))
+        self.click(confirm, after_sleep=2)
+        return confirm
+
+    def esc_cancel(self, send_esc=True):
+        if send_esc:
+            self.send_key('esc', after_sleep=1)
+        self.click_dialog_left_button()
+        self.wait_in_team_and_world(time_out=120)
+
+    def click_dialog_left_button(self) -> Box:
+        cancel = self.find_one([
+            Labels.cancel_button_hcenter_vcenter,
+            Labels.cancel_button_highlight_hcenter_vcenter,
+        ])
+        if not cancel:
+            raise CannotFindException(self.tr("can't find dialog left button"))
+        self.click(cancel, after_sleep=2)
+        return cancel
 
     def ensure_main(self, esc=True, time_out=30):
         self.info_set('current task', f'wait main esc={esc}')
@@ -689,6 +724,8 @@ class BaseWWTask(BaseTask):
     def is_main(self, esc=True):
         if self.in_team_and_world():
             self.logged_in = True
+            if self.in_realm():
+                self.esc_world_confirm()
             return True
         if self.wait_login():
             return False
@@ -711,15 +748,25 @@ class BaseWWTask(BaseTask):
                 return False
             texts = self.ocr(log=self.debug)
 
-            if login := self.find_boxes(texts, boundary=self.box_of_screen(0.3, 0.3, 0.7, 0.7),
+            login_box = self.box_of_screen(0.3, 0.3, 0.7, 0.7, hcenter=True, vcenter=True)
+            if login := self.find_boxes(texts,
+                                        boundary=login_box,
                                         match=LOGIN_TEXTS):
-                if not self.find_boxes(texts, boundary=self.box_of_screen(0.3, 0.3, 0.7, 0.7), match="+86"):
-                    self.click(login, after_sleep=1)
-                    self.log_info('点击登录按钮!')
+                if not self.find_boxes(texts, boundary=login_box, match="+86"):
+                    # the game may be auto logging in with saved credentials, wait and
+                    # confirm the login button is still there before clicking (#1356)
+                    self.sleep(LOGIN_CLICK_SETTLE_TIME)
+                    texts = self.ocr(log=self.debug)
+                    login = self.find_boxes(texts, boundary=login_box,
+                                            match=LOGIN_TEXTS)
+                    if login and not self.find_boxes(texts, boundary=login_box,
+                                                     match="+86"):
+                        self.click(login, after_sleep=1)
+                        self.log_info('点击登录按钮!')
                 return False
-            if agree := self.find_boxes(texts, boundary=self.box_of_screen(0.3, 0.3, 0.7, 0.7), match="同意"):
+            if agree := self.find_boxes(texts, boundary=login_box, match="同意"):
                 self.log_debug(f'found agree {agree}')
-                if self.find_boxes(texts, boundary=self.box_of_screen(0.3, 0.3, 0.7, 0.7), match=re.compile("隐私")):
+                if self.find_boxes(texts, boundary=login_box, match=re.compile("隐私")):
                     self.click(agree, after_sleep=1)
                     self.log_info('点击同意按钮!')
                 return False
@@ -738,9 +785,10 @@ class BaseWWTask(BaseTask):
                     self.log_info(f'点击开始游戏! {start}')
                     return False
             if switch_login := self.find_one(Labels.switch_account, vertical_variance=0.1, threshold=0.7):
-                if boxes := self.find_boxes(texts, boundary=self.box_of_screen(0.37, 0.63, 0.63, 0.99)):
+                if boxes := self.find_boxes(texts, boundary=self.box_of_screen(0.37, 0.63, 0.63, 0.99, hcenter=True,
+                                                                               vcenter=True)):
                     self.log_info(f'wait_login {switch_login} {boxes}')
-                    self.click(0.503, 0.926, after_sleep=3)
+                    self.click_relative(0.503, 0.926, hcenter=True, vcenter=True, after_sleep=3)
                     return False
 
     def in_team_and_world(self):
@@ -944,18 +992,18 @@ class BaseWWTask(BaseTask):
         x = 0.24
         self.sleep(0.4)
         if name == 'ningsu':
-            y = 0.28
+            y = 0.4
         elif name == 'moni':
-            y = 0.39
+            y = 0.3
         elif name == 'qiangdi':
             y = 0.49
         elif name == 'wuyin':
-            y = 0.6
+            y = 0.73
         elif name == 'zhange':
-            y = 0.7
-        elif name == 'mengyan':
-            y = 0.86
+            y = 0.61
         elif name == 'canxiang':
+            y = 0.83
+        elif name == 'mengyan':
             self.click_relative(0.356, 0.882, after_sleep=after_sleep)
             y = 0.86
         else:
@@ -1004,6 +1052,8 @@ class BaseWWTask(BaseTask):
                         self.click(0.49, 0.55, after_sleep=0.5)  # 点击不再提醒
                         self.click(confirm, after_sleep=0.5)
                         self.click_confirm()
+                if feature.name != 'remove_custom':
+                    self.wait_click_skip_dialog_confirm()
                 return True
 
     def click_confirm(self, timeout=1):
@@ -1012,6 +1062,56 @@ class BaseWWTask(BaseTask):
             relative_x=-1, raise_if_not_found=False,
             threshold=0.6,
             time_out=1)
+
+    def click_skip_dialog_confirm(self):
+        skip_dialog_confirm = self.find_one(
+            ['confirm_btn_hcenter_vcenter', 'confirm_btn_highlight_hcenter_vcenter'],
+            horizontal_variance=0.1,
+            vertical_variance=0.1,
+        )
+        if not skip_dialog_confirm:
+            return False
+
+        skip_dialog_check = self.find_one(
+            'skip_dialog_check',
+            horizontal_variance=0.1,
+            vertical_variance=0.1,
+        )
+        if not skip_dialog_check:
+            check_feature = self.get_feature_by_name('skip_dialog_check')
+            wide_check_template = cv2.resize(
+                check_feature.mat,
+                (0, 0),
+                fx=WIDE_MODE_UI_SCALE,
+                fy=WIDE_MODE_UI_SCALE,
+                interpolation=cv2.INTER_AREA,
+            )
+            skip_dialog_check = self.find_one(
+                'skip_dialog_check',
+                box=self.box_of_screen(0.35, 0.45, 0.55, 0.65),
+                template=wide_check_template,
+            )
+        if not skip_dialog_check:
+            return False
+
+        logger.info('confirm dialog exists, click confirm')
+        self.sleep(0.5)
+        self.click(skip_dialog_check)
+        self.sleep(0.5)
+        self.click(skip_dialog_confirm)
+        self.sleep(0.2)
+        return True
+
+    def wait_click_skip_dialog_confirm(self, time_out=3):
+        return self.wait_until(
+            self.click_skip_dialog_confirm,
+            time_out=time_out,
+            raise_if_not_found=False,
+        )
+
+    def click_team_challenge(self):
+        self.wait_click_feature('team_start_challenge', raise_if_not_found=True, click_after_delay=0.5, after_sleep=1)
+        self.wait_click_skip_dialog_confirm()
 
     def wait_click_travel(self):
         self.wait_until(self.click_traval_button, raise_if_not_found=True, time_out=10)
@@ -1045,13 +1145,25 @@ class BaseWWTask(BaseTask):
             return 424 / 2160
         bar = boxes[0]
         self.draw_boxes(boxes=bar, color="red")
-        bar_top = bar.y / self.height
-        return bar_top
+        return bar.y / self.height
 
-    def click_on_book_target(self, serial_number: int, total_number: int):
+    def click_on_book_target(self, serial_number: int, total_number: int, structure: list[int] = None):
+        def get_cross_count(structure, sn):
+            current_sum = 0
+            cross_count = 0
+            for s in structure:
+                current_sum += s
+                if sn > current_sum:
+                    cross_count += 1
+                else:
+                    break
+            return cross_count
+
         self.sleep(0.5)
         bar_bottom = 0.8806
         bar_x = 0.9730
+        header_h = 0.028  # calibrated header height (~40px @1440), replaces separator=0.01
+        cross_count = 0
         container_max_rows = 4
         target_index = -1
 
@@ -1060,19 +1172,43 @@ class BaseWWTask(BaseTask):
         if serial_number <= container_max_rows:
             target_index = serial_number - 1
         else:
-            item_h = (bar_bottom - bar_top) / total_number
-            height = item_h * serial_number
-            self.click(bar_x, bar_top + height, after_sleep=1)
+            calib_cross = get_cross_count(structure, serial_number) if structure else 0
+            calib_container_h = (bar_bottom - bar_top - (len(structure) - 1) * header_h) if structure else (bar_bottom - bar_top)
+            calib_item_h = calib_container_h / total_number if total_number else 0
+            calib_y = min(bar_top + calib_item_h * serial_number + calib_cross * header_h, bar_bottom) if structure else bar_bottom
+            to_click_y = calib_y
+            item_h = calib_item_h
+            self.click(bar_x, to_click_y, after_sleep=1)
         btns = self.find_feature('boss_proceed', box=self.box_of_screen(0.9113, 0.229, 0.9613, 0.861), threshold=0.8)
+        # adaptive retry: closed-loop correction for residual underscroll (found 3/4 with low max_y)
+        if not target_index > -1 and btns and len(btns) in (3, 4) and structure and serial_number > container_max_rows:
+            max_y = max(b.y / self.height for b in btns)
+            if max_y < 0.73:
+                retry_y = min(to_click_y + item_h * 0.55, bar_bottom) if 'item_h' in locals() and item_h else min(to_click_y + 0.018, bar_bottom)
+                self.click(bar_x, retry_y, after_sleep=1)
+                btns = self.find_feature('boss_proceed', box=self.box_of_screen(0.9113, 0.229, 0.9613, 0.861), threshold=0.8)
         if not btns:
             raise Exception("can't find boss_proceed")
         if target_index > -1:
-            target = btns[target_index]
+            if target_index < len(btns):
+                target = btns[target_index]
+            else:
+                # Fallback: not enough visible rows, scroll with calibrated header
+                calib_cross2 = get_cross_count(structure, serial_number) if structure else 0
+                calib_h2 = (bar_bottom - bar_top - (len(structure) - 1) * header_h) if structure else (bar_bottom - bar_top)
+                calib_y2 = min(bar_top + (calib_h2 / total_number) * serial_number + calib_cross2 * header_h, bar_bottom) if total_number else bar_bottom
+                self.click(bar_x, calib_y2, after_sleep=1)
+                btns = self.find_feature('boss_proceed', box=self.box_of_screen(0.9113, 0.229, 0.9613, 0.861), threshold=0.8)
+                if not btns:
+                    raise Exception("can't find boss_proceed after scroll")
+                target = max(btns, key=lambda box: box.y)
         else:
             target = max(btns, key=lambda box: box.y)
         self.draw_boxes(boxes=target, color="red")
         self.click(target, after_sleep=1)
-        self.wait_feature(['fast_travel_custom', 'gray_teleport', 'remove_custom'], time_out=10, settle_time=0.5)
+        feature = self.wait_feature(['fast_travel_custom', 'gray_teleport', 'remove_custom', 'team_close'], time_out=10,
+                                    settle_time=0.5, raise_if_not_found=True)
+        return feature.name == 'team_close'
 
     def change_time_to_night(self):
         logger.info('change time to night')
@@ -1158,7 +1294,7 @@ def convert_bw(cv_image):
 
 
 lower_icon_white = np.array([210, 210, 210], dtype=np.uint8)
-upper_icon_white = np.array([244, 244, 244], dtype=np.uint8)
+upper_icon_white = np.array([255, 255, 255], dtype=np.uint8)
 
 
 def convert_dialog_icon(cv_image):
@@ -1167,7 +1303,7 @@ def convert_dialog_icon(cv_image):
     return output_image
 
 
-def binarize_for_matching(image):
+def binarize_for_matching(image, threshold=244):
     """
     Converts a colored image to a binary image based on a brightness threshold.
 
@@ -1189,5 +1325,5 @@ def binarize_for_matching(image):
     # Pixels > 239 will be set to 255 (white).
     # Pixels <= 239 will be set to 0 (black).
     # cv2.THRESH_BINARY is the type of thresholding we want.
-    _, binary_image = cv2.threshold(gray_image, 244, 255, cv2.THRESH_BINARY)
+    _, binary_image = cv2.threshold(gray_image, threshold, 255, cv2.THRESH_BINARY)
     return binary_image

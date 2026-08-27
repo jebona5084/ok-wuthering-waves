@@ -651,7 +651,7 @@ msgid "Yes if Farming Nightmare: Hecate"
 msgstr "悪夢・ヘカテを周回する場合は「はい」を選択"
 
 msgid "Auto Farm all Nightmare Nest"
-msgstr ""
+msgstr "すべてのナイトメア・ネストを自動周回します。"
 
 msgid "Default"
 msgstr ""
@@ -678,7 +678,7 @@ msgid "Wait time before each combat (seconds), overrides Boss profile if set"
 msgstr ""
 
 msgid "Auto Click Fast Travel in Map"
-msgstr ""
+msgstr "マップ上のファストトラベルを自動でクリックします。"
 
 msgid "Character Config"
 msgstr "キャラクター設定"
@@ -799,11 +799,8 @@ msgstr "テレポートする週間ボス"
 msgid "Which Boss Challenge to Teleport"
 msgstr "テレポートするボスチャレンジ"
 
-msgid "For Example, Denia, From Top to Bottom, Starting with 1"
-msgstr "例: Denia。上から下へ、1から開始"
-
-msgid "For Example, Nameless Explorer, From Top to Bottom, Starting with 1"
-msgstr "例: Nameless Explorer。上から下へ、1から開始"
+msgid "From Top to Bottom, Starting with 1"
+msgstr "上から下へ、1から開始"
 
 msgid "Characters"
 msgstr "キャラクター"
@@ -1098,8 +1095,291 @@ msgstr "タスクが停止するまでガーデン操作を検出してクリッ
 msgid "Check Weekly Garden"
 msgstr "ウィークリーガーデンを確認"
 
-msgid "After claiming daily rewards, check weekly Garden progress and run Garden Task if 6000 points has not been reached."
+msgid ""
+"After claiming daily rewards, check weekly Garden progress and run Garden "
+"Task if 6000 points has not been reached."
 msgstr "デイリー報酬の受取後、ウィークリーガーデンの進捗を確認し、6000ポイント未達ならガーデンタスクを実行します。"
 
 msgid "Guidebook Key"
 msgstr "ソラリスガイド"
+
+msgid "Rover"
+msgstr "漂泊者"
+
+msgid "Yangyang: Xuanling"
+msgstr "秧秧・玄翎"
+
+msgid "Merge Discarded Echoes"
+msgstr "破棄済み音骸を融合"
+
+msgid ""
+"Must have 1000 discarded Echo to Run, Merge discarded Echoes in full "
+"batches of 100."
+msgstr "実行には破棄済み音骸が1000個必要です。破棄済み音骸を100個単位で融合します。"
+
+msgid "Bag Key"
+msgstr "バッグキー"
+
+msgid "In-game hotkey used to open the Bag."
+msgstr "バッグを開くゲーム内ホットキー。"
+
+msgid "Echo"
+msgstr "音骸"
+
+msgid "Check Discarded Echo"
+msgstr "破棄済み音骸を確認"
+
+msgid "After daily tasks, check for 1000 discarded Echoes and merge them."
+msgstr "デイリータスク後に破棄済み音骸が1000個あるか確認し、融合します。"
+
+msgid "Teleport and Farm 4C Echo"
+msgstr "テレポートしてコスト4音骸を収集"
+
+msgid "Merge Echo If discarded > 1000"
+msgstr "破棄済み音骸が1000個超なら融合"
+
+msgid "Additional Tasks to Run After Daily Task"
+msgstr "デイリータスク後に実行する追加タスク"
+
+msgid "Select optional tasks. Nightmare Nest runs before stamina farming to help complete the daily task; the other tasks run afterward."
+msgstr "任意のタスクを選択します。悪夢の巣はデイリー達成を補助するためスタミナ消費前に実行し、その他のタスクはその後に実行します。"
+
+msgid "Teleport and Farm 4C Echo requires \"Teleport to Boss\" to be enabled in Farm Echo Task."
+msgstr "「テレポートしてコスト4音骸を収集」を実行するには、音骸収集タスクの「ボスへテレポート」を有効にしてください。"
+
+msgid "Auto Farm all Nightmare Nest requires at least one \"Which to Farm\" option."
+msgstr "「すべての悪夢の巣を自動周回」を実行するには、「周回対象」を1つ以上選択してください。"
+
+msgid "Daily Task Completed"
+msgstr "デイリータスク完了"
+
+msgid "Daily task completed, start teleport to farm 4C echo"
+msgstr "デイリータスク完了。テレポートしてコスト4音骸の収集を開始します"
+
+msgid "can't find dialog right button"
+msgstr "ダイアログの右ボタンが見つかりません"
+
+msgid "can't find dialog left button"
+msgstr "ダイアログの左ボタンが見つかりません"
+
+msgid "⚔️ Auto Combat"
+msgstr "⚔️ 自動戦闘"
+
+msgid "🔑 Auto Login"
+msgstr "🔑 自動ログイン"
+
+msgid "🌸 Auto Pick"
+msgstr "🌸 自動採集"
+
+msgid "🎛️ 批量修改声骸主属性(仅支持简中游戏语言)"
+msgstr "🎛️ 音骸メインステータス一括変更（簡体字中国語のみ）"
+
+msgid "📅 Daily Task"
+msgstr "📅 デイリータスク"
+
+msgid "🩺 Diagnosis"
+msgstr "🩺 診断"
+
+msgid "⬆️ 批量强化声骸(游戏与okww语言必须为简体/繁体中文)"
+msgstr "⬆️ 音骸一括強化（ゲームとokwwは簡体字/繁体字中国語が必要）"
+
+msgid "🌀 Farm 4C Echo in Dungeon/World"
+msgstr "🌀 ダンジョン/フィールドでコスト4音骸を周回"
+
+msgid "🗺️ Farm Map with Star Path"
+msgstr "🗺️ 星のルートでマップ周回"
+
+msgid "✈️ Fast Travel"
+msgstr "✈️ ファストトラベル"
+
+msgid "♻️ 数据坞五合一"
+msgstr "♻️ データドック5個合成"
+
+msgid "⚒️ Forgery Challenge"
+msgstr "⚒️ 凝素領域"
+
+msgid "🎡 自动周常乐园"
+msgstr "🎡 週間楽園を自動進行"
+
+msgid "♻️ Merge Discarded Echoes"
+msgstr "♻️ 廃棄済み音骸を合成"
+
+msgid "🖱️ Prevent Wuthering Waves from moving the mouse"
+msgstr "🖱️ Wuthering Wavesによるマウス移動を防止"
+
+msgid "👥 Multi Account Daily Task"
+msgstr "👥 複数アカウントのデイリータスク"
+
+msgid "🌙 Nightmare Nest Task"
+msgstr "🌙 ナイトメア・ネストタスク"
+
+msgid "🧪 Simulation Challenge"
+msgstr "🧪 仮想訓練チャレンジ"
+
+msgid "⏭️ Skip Dialog during Quests"
+msgstr "⏭️ 任務中の会話をスキップ"
+
+msgid "🌊 Tacet Suppression"
+msgstr "🌊 無音区"
+
+msgid "点击B进入背包, 在过滤器中选择需要修改主属性的声骸, 并按照等级从0排序后开始."
+msgstr "Bキーでバッグを開き、フィルターでメインステータスを変更する音骸を選択し、レベル0から昇順に並べて開始してください。"
+
+msgid "点击B进入背包, 在过滤器中选择需要强化的声骸, 并按照等级从0排序后开始."
+msgstr "Bキーでバッグを開き、フィルターで強化する音骸を選択し、レベル0から昇順に並べて開始してください。"
+
+msgid "游戏与okww语言必须为简体/繁体中文,必须16:9分辨率,使用1600x900以上分辨率, 勾选需要的, 没勾的都会自动合成"
+msgstr "ゲームとokwwの言語は簡体字/繁体字中国語、解像度は16:9かつ1600x900以上が必要です。必要なものにチェックを入れると、未チェックのものは自動合成されます。"
+
+msgid "Switch to Healer before and after Combat"
+msgstr "戦闘前後にヒーラーへ切り替える"
+
+msgid "All fields are required."
+msgstr "すべての項目を入力してください。"
+
+msgid "Author"
+msgstr "作者"
+
+msgid "Choose Export Folder"
+msgstr "エクスポート先フォルダーを選択"
+
+msgid "Confirm Import"
+msgstr "インポートを確認"
+
+msgid "Create Team"
+msgstr "チームを作成"
+
+msgid "Create or import a team to edit character code."
+msgstr "キャラクターコードを編集するには、チームを作成またはインポートしてください。"
+
+msgid "Description"
+msgstr "説明"
+
+msgid "Export"
+msgstr "エクスポート"
+
+msgid "Export Team"
+msgstr "チームをエクスポート"
+
+msgid "Import"
+msgstr "インポート"
+
+msgid "Import Team"
+msgstr "チームをインポート"
+
+msgid "Importing will override the local code for this team."
+msgstr "インポートすると、このチームのローカルコードが上書きされます。"
+
+msgid "Invalid Team Archive"
+msgstr "無効なチームアーカイブ"
+
+msgid "Missing Information"
+msgstr "情報が不足しています"
+
+msgid "Modified"
+msgstr "更新日時"
+
+msgid "Name"
+msgstr "名前"
+
+msgid "No shared code is available for this team."
+msgstr "このチームで共有されているコードはありません。"
+
+msgid "Reset Character Code"
+msgstr "キャラクターコードをリセット"
+
+msgid "Reset this character to built in code for this team?"
+msgstr "このチームのキャラクターを組み込みコードに戻しますか？"
+
+msgid "Reset to Built In"
+msgstr "組み込みコードに戻す"
+
+msgid "Save changes before exporting."
+msgstr "エクスポートする前に変更を保存してください。"
+
+msgid "Select 3 different characters"
+msgstr "異なるキャラクターを3人選択"
+
+msgid "Size"
+msgstr "サイズ"
+
+msgid "Team"
+msgstr "チーム"
+
+msgid "Team Workshop"
+msgstr "チームワークショップ"
+
+msgid "Team character code saved and reloaded for the matching team."
+msgstr "チーム用キャラクターコードを保存し、一致するチームに再読み込みしました。"
+
+msgid "Team character code saved."
+msgstr "チーム用キャラクターコードを保存しました。"
+
+msgid "Team created."
+msgstr "チームを作成しました。"
+
+msgid "Team exported to {path}"
+msgstr "チームを {path} にエクスポートしました"
+
+msgid "Team imported and reloaded for the matching team."
+msgstr "チームをインポートし、一致するチームに再読み込みしました。"
+
+msgid "Team imported."
+msgstr "チームをインポートしました。"
+
+msgid "Teams"
+msgstr "チーム"
+
+msgid "The archive is for a different team."
+msgstr "このアーカイブは別のチーム用です。"
+
+msgid "Upload Team"
+msgstr "チームをアップロード"
+
+msgid "Version"
+msgstr "バージョン"
+
+msgid "Workshop"
+msgstr "ワークショップ"
+
+msgid "Workshop Error"
+msgstr "ワークショップエラー"
+
+msgid "Workshop archive is too large."
+msgstr "ワークショップのアーカイブが大きすぎます。"
+
+msgid "Workshop download URL is invalid."
+msgstr "ワークショップのダウンロード URL が無効です。"
+
+msgid "Zip files (*.zip)"
+msgstr "ZIP ファイル (*.zip)"
+
+msgid "Workshop response is too large."
+msgstr "ワークショップの応答が大きすぎます。"
+
+msgid "Workshop returned invalid JSON."
+msgstr "ワークショップから無効な JSON が返されました。"
+
+msgid "Workshop response is invalid."
+msgstr "ワークショップの応答が無効です。"
+
+msgid "Workshop returned a different team."
+msgstr "ワークショップから別のチームが返されました。"
+
+msgid "Cancel"
+msgstr "キャンセル"
+
+msgid "Close"
+msgstr "閉じる"
+
+msgid "{team_name} - Team Workshop"
+msgstr "{team_name} - チームワークショップ"
+
+msgid "Delete Team"
+msgstr "チームを削除"
+
+msgid "Permanently delete the team {team}?"
+msgstr "チーム {team} を完全に削除しますか？"
+
+msgid "Team deleted."
+msgstr "チームを削除しました。"
