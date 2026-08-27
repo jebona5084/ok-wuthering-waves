@@ -49,7 +49,7 @@ class Ciaccona(BaseChar):
         # name-based lookup: custom-loaded char classes inherit BaseChar,
         # not the built-in class, so task.has_char(Cartethyia) misses them
         self.cartethyia = next(
-            (c for c in self.task.chars
+            (c for c in (getattr(self.task, 'chars', None) or [])
              if c is not None and type(c).__name__ == 'Cartethyia'), None)
         self.teammate_decided = True
         self.logger.debug(f'ciaccona teammate cartethyia: {self.cartethyia}')

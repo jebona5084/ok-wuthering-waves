@@ -1288,6 +1288,9 @@ class BaseCombatTask(CombatCheck):
         if now - getattr(self, '_last_buff_overlay', 0) < self.BUFF_OVERLAY_INTERVAL:
             return
         self._last_buff_overlay = now
+        if getattr(self, '_executor', None) is None:
+            # unit tests build tasks without an executor; width_of_screen needs one
+            return
         try:
             import cv2
             from ok.gui.Communicate import communicate
@@ -1673,8 +1676,8 @@ class BaseCombatTask(CombatCheck):
             self._con_dump_last_cat = category
             self._con_dump_last_t = now
             self._con_dump_count = count + 1
-        except Exception:  # diagnostics must never break a read
-            self.logger.debug('con crop dump failed', exc_info=True)
+        except Exception as e:  # diagnostics must never break a read
+            self.logger.debug(f'con crop dump failed: {e}')
 
     def con_ring_metrics(self, cropped, color_range, sectors=72):
         """Compat wrapper over con_ring_profile: (contiguous arc fraction,

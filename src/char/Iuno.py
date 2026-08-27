@@ -73,8 +73,8 @@ class Iuno(BaseChar):
                         and tracker.remaining(SK_LIBERATION) > 8
                         and no_bounce):
                     return SwitchPriority.MUST
-        except Exception:
-            self.logger.debug('Iuno bank-window claim failed', exc_info=True)
+        except Exception as e:
+            self.logger.debug(f'Iuno bank-window claim failed: {e}')
         return super().get_switch_priority(current_char, has_intro, target_low_con)
 
     def perform_beat(self, beat):
@@ -197,8 +197,8 @@ class Iuno(BaseChar):
         cd = 0.0
         try:
             cd = max(0.0, float(self.task.get_cd('resonance')))
-        except Exception:
-            self.logger.debug('Iuno: resonance cd read failed', exc_info=True)
+        except Exception as e:
+            self.logger.debug(f'Iuno: resonance cd read failed: {e}')
         # cd==0 with the prompt missing is a transient (cd OCR miss / prompt
         # redraw): give it a short grace instead of the full cap.
         wait = min(cd + 0.8, max_wait) if cd > 0 else 1.0
@@ -360,8 +360,8 @@ class Iuno(BaseChar):
         try:
             from src.char.Augusta import amp_bank_window_open
             t, amp_short = amp_bank_window_open(self.task)
-        except Exception:
-            self.logger.debug('Iuno bank window read failed', exc_info=True)
+        except Exception as e:
+            self.logger.debug(f'Iuno bank window read failed: {e}')
         threshold = 0.6
         if ((t is not None and t <= 14.0 and amp_short)
                 or (t is None and tracker.has(IUNO_OUTRO)

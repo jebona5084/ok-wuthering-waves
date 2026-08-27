@@ -41,9 +41,11 @@ class TestSwitchLogic(TaskTestCase):
         return chars
 
     def test_intro_prefers_main_dps_over_older_sub(self):
+        # buff_time=0 keeps the sub out of upstream's unbuffed-support intro
+        # rule, so this stays a pure role-order characterization
         current, sub, main = self.set_team(
             self.make_char(0, CharType.HEALER),
-            self.make_char(1, CharType.SUB_DPS, switched_in=5),
+            self.make_char(1, CharType.SUB_DPS, switched_in=5, buff_time=0),
             self.make_char(2, CharType.MAIN_DPS, switched_in=10))
         self.assertIs(self.task._choose_switch_target(current, has_intro=True), main)
 

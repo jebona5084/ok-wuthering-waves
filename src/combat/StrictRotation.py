@@ -324,16 +324,16 @@ class StrictRotation:
         try:
             from src.combat.BuffTracker import get_buff_tracker
             get_buff_tracker(self.task).clear()
-        except Exception:  # never break the rotation on cleanup
-            logger.debug('buff tracker clear on new combat failed', exc_info=True)
+        except Exception as e:  # never break the rotation on cleanup
+            logger.debug(f'buff tracker clear on new combat failed: {e}')
         for char in (getattr(self.task, 'chars', None) or []):
             hook = getattr(char, 'on_rotation_new_combat', None)
             if hook is None:
                 continue
             try:
                 hook()
-            except Exception:
-                logger.debug('on_rotation_new_combat failed', exc_info=True)
+            except Exception as e:
+                logger.debug(f'on_rotation_new_combat failed: {e}')
 
     def current_beat(self):
         return BEATS[self.index]
@@ -411,10 +411,11 @@ class StrictRotation:
             char.perform_beat(beat)
         except _combat_control_exceptions():
             raise  # combat ended / char dead -> let the task loop handle it
-        except Exception:
+        except Exception as e:
             # An unexpected per-beat failure must not pin the rotation on the
             # same beat forever: advance past it, then re-raise so it is visible.
-            logger.exception(f'{self.LABEL} beat {beat.name} failed; advancing past it')
+            # ok-script's Logger has no .exception(); the re-raise carries the trace.
+            logger.error(f'{self.LABEL} beat {beat.name} failed; advancing past it: {e}')
             self.advance()
             raise
         # Strict sequence: always advance to the next beat (never stay/redo). On

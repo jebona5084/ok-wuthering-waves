@@ -143,15 +143,15 @@ def compute_window(beat, char):
     for ext in window.extend:
         try:
             fired = ext.predicate(char)
-        except Exception:  # a bad predicate must never break the rotation
-            logger.exception(f'VariableRotation window rule {ext.name} raised; ignoring')
+        except Exception as e:  # a bad predicate must never break the rotation
+            logger.error(f'VariableRotation window rule {ext.name} raised; ignoring: {e}')
             fired = False
         if not fired:
             continue
         try:
             ext_seconds = ext.seconds(char) if callable(ext.seconds) else ext.seconds
-        except Exception:  # a bad seconds rule must never break the rotation
-            logger.exception(f'VariableRotation window seconds {ext.name} raised; ignoring')
+        except Exception as e:  # a bad seconds rule must never break the rotation
+            logger.error(f'VariableRotation window seconds {ext.name} raised; ignoring: {e}')
             continue
         if ext_seconds > seconds:
             seconds = ext_seconds
@@ -194,8 +194,9 @@ class VariableRotation(StrictRotation):
             char.perform_beat(beat)
         except _combat_control_exceptions():
             raise
-        except Exception:
-            logger.exception(f'{self.LABEL} beat {beat.name} failed; advancing past it')
+        except Exception as e:
+            # ok-script's Logger has no .exception(); the re-raise carries the trace.
+            logger.error(f'{self.LABEL} beat {beat.name} failed; advancing past it: {e}')
             self.advance()
             raise
         # Windowed dwell: hold the field for the (possibly extended) window doing

@@ -80,8 +80,8 @@ class ShoreKeeper(BaseChar):
                     and tracker.remaining(SK_LIBERATION) > 10
                     and tracker.remaining(SK_OUTRO) > 10):
                 return SwitchPriority.NO
-        except Exception:
-            self.logger.debug('SK field-time economy check failed', exc_info=True)
+        except Exception as e:
+            self.logger.debug(f'SK field-time economy check failed: {e}')
         return super().get_switch_priority(current_char, has_intro, target_low_con)
 
     def skip_combat_check(self):
@@ -316,8 +316,8 @@ class ShoreKeeper(BaseChar):
                 from src.combat.BuffTracker import get_buff_tracker, AUGUSTA_OUTRO
                 get_buff_tracker(self.task).bind_receiver(AUGUSTA_OUTRO,
                                                           self.char_name)
-        except Exception:
-            self.logger.debug('ShoreKeeper: bind_augusta_outro skipped', exc_info=True)
+        except Exception as e:
+            self.logger.debug(f'ShoreKeeper: bind_augusta_outro skipped: {e}')
 
     def _intro_wait(self):
         self._bind_augusta_outro()
